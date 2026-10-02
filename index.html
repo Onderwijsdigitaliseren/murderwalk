@@ -519,6 +519,7 @@ function draw(t){
     if(sel===s){cx.strokeStyle="#ece4d2";cx.lineWidth=2;cx.beginPath();cx.arc(X,Y,24,0,7);cx.stroke()}
     const lk=!s.done&&!canOpen(s);cx.fillStyle=s.done||lk?"#5f7090":"#ece4d2";if(V.s>=.4||sel===s)cx.fillText((s.done||gotI(i)?"✓ ":"")+(lk?ownTag(i).toUpperCase()+" · ":"")+s.name.toUpperCase().slice(0,26),X,Y+40)});
   G.rare.forEach(q=>{if(q.done||dTo(q)>200)return;const X=sx(q.x),Y=sy(q.y),tier=SHADES[q.id][1];ghost(cx,X,Y-bob*.4,42,tier===3?"#f0a63a":tier===2?"#c9a6ea":"#ffffff",still?.8:.5+.4*Math.abs(Math.sin(t/300)));cx.fillStyle="#ece4d2";cx.fillText("???",X,Y+42);if(sel===q){cx.strokeStyle="#ece4d2";cx.lineWidth=2;cx.beginPath();cx.arc(X,Y,26,0,7);cx.stroke()}});
+  xDraw(t);
   // speler
   const X=sx(P.x),Y=sy(P.y);cx.fillStyle="rgba(240,166,58,.12)";cx.beginPath();cx.arc(X,Y,35*V.s,0,7);cx.fill();cx.strokeStyle="rgba(240,166,58,.5)";cx.lineWidth=1;cx.stroke();
   cx.fillStyle="#f0a63a";cx.beginPath();cx.arc(X,Y,7,0,7);cx.fill();cx.strokeStyle="#101a2b";cx.lineWidth=2;cx.stroke();
@@ -531,7 +532,7 @@ function loop(t){
   if(!loop.n||t-loop.n>500){loop.n=t;tick()}
   requestAnimationFrame(loop);
 }
-function targets(){return G.st.filter(s=>!s.done&&canOpen(s)).concat(G.rare.filter(q=>!q.done&&dTo(q)<=200))}
+function targets(){return G.st.filter(s=>!s.done&&canOpen(s)).concat(G.rare.filter(q=>!q.done&&dTo(q)<=200)).concat(xTargets())}
 function tick(){
   const el=Math.floor((Date.now()-G.t0)/1000);$("#hT").textContent=Math.floor(el/60)+":"+String(el%60).padStart(2,"0");
   $("#hS").textContent=G.st.filter((s,i)=>s.done||gotI(i)).length+"/8";$("#hG").textContent=G.rare.filter(q=>q.done).length+"/3";$("#hD").textContent=(G.dist/1000).toFixed(1).replace(".",",");
@@ -541,7 +542,7 @@ function tick(){
   const here=ts.find(inRange);
   if(here&&arrived!==here&&$("#sheet").hidden){arrived=here;sel=here;buzz([80,60,80]);beep(660,.2)}
   if(!here)arrived=null;
-  chip();if(el%10===0)save();
+  xTick();chip();xAfter();if(el%10===0)save();
 }
 function chip(){
   const c=$("#chip");if(!sel||sel.done){c.hidden=true;return}c.hidden=false;
@@ -554,6 +555,7 @@ function chip(){
   else if(d<150)b.textContent="Gps hapert, ik sta er";
   else b.hidden=true;
   if(G.grp&&!rare&&!canOpen(sel)){$("#cHint").textContent=lockHint(sel);b.hidden=true}
+  xAfter();
 }
 $("#cAct").onclick=()=>{if(!sel||(sel.id==null&&!canOpen(sel)))return;if(inRange(sel))encounter(sel);else if(G.mode==="demo"){walkTo={x:sel.x,y:sel.y};V.follow=true}else if(dTo(sel)<150){G.force=sel;encounter(sel)}};
 let pd=null;
@@ -685,6 +687,7 @@ const fragList=()=>{const v=VF[G.c.victim[0]]||T.vfD,k=KF[G.c.sus[G.c.killer].na
 const vn=s=>s.replace(/\{V\}/g,G.c.victim[0]);
 /* ---------- camera: de schaduw in je eigen straat ---------- */
 function encounter(t){
+  if(t.kind==="evt")return evtOpen(t);if(t.kind==="iv")return ivSheet(t);
   const wit=t.id!=null||t.kind==="wit",can=navigator.mediaDevices&&navigator.mediaDevices.getUserMedia;walkTo=null;
   if(!wit||!can||G.cam==="off")return puzzle(t);
   if(G.cam==="on")return startAR(t);
@@ -752,7 +755,7 @@ function noteSheet(tab){
   else{const ev=found.filter(s=>s.kind==="ev"),wi=found.filter(s=>s.kind==="wit");
     body=`<div class="eyebrow">Bewijs ${ev.length}/3 · altijd waar</div><div class="list">`+(ev.map(s=>`<div class="clue"><b>${esc(c.ev[s.idx].title)}</b>${esc(c.ev[s.idx].text)}</div>`).join("")||`<p class="note" style="color:#6a6250">Nog niets gevonden.</p>`)+`</div>
     <div class="eyebrow">Getuigen ${wi.length}/5 · één liegt</div><p class="note" style="color:#6a6250">Tik om te markeren als waar of leugen.</p><div class="list">`+(wi.map(s=>`<button type="button" data-w="${s.idx}" class="clue wit m${G.mw[s.idx]}"><em>${esc(s.persona)}${G.tips.includes(s.idx)?" · spreekt de waarheid (tip)":""}${G.mw[s.idx]===1?" · waar":G.mw[s.idx]===2?" · leugen":""}</em>„${esc(c.wit[s.idx].text)}”</button>`).join("")||`<p class="note" style="color:#6a6250">Nog niemand gesproken.</p>`)+`</div>`}
-  sheet(`<h2>Notitieboek</h2><div class="tabs"><button type="button" data-t="c" aria-selected="${tab==="c"}">Sporen</button><button type="button" data-t="s" aria-selected="${tab==="s"}">Verdachten</button><button type="button" data-t="v" aria-selected="${tab==="v"}">Verhaal</button>${G.grp?`<button type="button" data-t="g" aria-selected="false">${T.gTab}</button>`:""}</div>${body}${G.grp&&tab==="c"?gotHtml(false):""}<button class="btn ghost" style="color:#1b2233;border-color:#c9bfa6" id="shX">Terug naar de kaart</button>`);
+  sheet(`<h2>Notitieboek</h2><div class="tabs"><button type="button" data-t="c" aria-selected="${tab==="c"}">Sporen</button><button type="button" data-t="s" aria-selected="${tab==="s"}">Verdachten</button><button type="button" data-t="v" aria-selected="${tab==="v"}">Verhaal</button>${G.grp?`<button type="button" data-t="g" aria-selected="false">${T.gTab}</button>`:""}</div>${body}${G.grp&&tab==="c"?gotHtml(false):""}${tab==="c"?xHtml():""}<button class="btn ghost" style="color:#1b2233;border-color:#c9bfa6" id="shX">Terug naar de kaart</button>`);
   $("#sheetBody").onclick=e=>{const b=e.target.closest("button");if(!b)return;if(b.dataset.t)noteSheet(b.dataset.t);else if(b.dataset.s){G.ms[b.dataset.s]^=1;noteSheet("s")}else if(b.dataset.w){G.mw[b.dataset.w]=(G.mw[b.dataset.w]+1)%3;noteSheet("c")}else if(b.id==="shX"){closeSheet()}};
 }
 $("#bNote").onclick=()=>noteSheet("c");
@@ -995,6 +998,49 @@ function grpForm(cfg,join){
       else{RUN=pickS();GRP={m:cfg.m,n:cfg.m==="V"?2:cfg.n,me:cfg.me};startGps(Math.floor(Math.random()*4e9))}}}}
 function grpOpen(v){const c=parseG(v);if(!c){toast(T.gBadL);return false}c.me=0;grpForm(c,true);return true}
 $("#bGrp").onclick=()=>{if(!groupLeft())return proSheet("groep");grpForm({m:"S",n:4,me:0},false)};
+
+/* ---------- onderweg: vluchtend bewijs en verhoor ---------- */
+Object.assign(T,{"evName": "Vluchtend bewijs", "evEy": "Nu", "evH": "Iemand haalt bewijs weg", "evT": "Op ongeveer {d} meter probeert iemand een spoor te laten verdwijnen. Ben je er binnen {m} minuten, dan is het van jou. Stevig doorlopen is genoeg. Blijf op het verkeer letten.", "evOk": "Erachteraan", "evLost": "Te laat. Het bewijs is verdwenen.", "evRadar": "Vluchtend bewijs: {t} · nog {d} m", "evHint": "Iemand probeert dit te laten verdwijnen.", "evAct": "Pak het bewijs", "evWinEy": "Net op tijd", "evWinH": "Dit hoorde niemand te vinden", "evWinT": "Iemand liet het vallen en verdween in het donker. Je hebt een vierde bewijsstuk.", "evTag": "Extra bewijs · altijd waar", "ivGo": "{n} loopt hier rond. Je mag één vraag stellen.", "ivHint": "Een verdachte. Je mag één vraag stellen.", "ivAct": "Verhoor", "ivEy": "Verhoor", "ivT": "Je mag één vraag stellen. Kies goed, want de andere vraag vervalt.", "ivRule": "Een onschuldige spreekt de waarheid. De dader liegt.", "ivRuleS": "waar, tenzij dit de dader is", "ivPre": "Ik liep daar alleen langs. Maar ik zag wel iemand.", "ivLater": "Nog even niet", "ivQ": {"jas": "Wat voor jas droeg die persoon?", "bril": "Droeg die persoon een bril?", "hand": "Met welke hand deed die persoon iets?", "schoen": "Wat voor schoenen had die persoon aan?", "lengte": "Hoe groot was die persoon?"}, "xXp": "+30 punten", "xOn": "Verder", "xNote": "Onderweg gevonden"});
+const xFree=()=>Object.keys(TR).filter(t=>!G.c.ev.some(e=>e.trait===t));
+function xTargets(){const X=G.x;if(!X)return[];const o=[];if(X.evt&&X.evt.state==="run")o.push(X.evt);if(X.iv&&!X.iv.done)o.push(X.iv);return o}
+function spot(a,b){const ok=p=>Math.hypot(p.x,p.y)<=G.R*1.1&&G.st.concat(G.rare,xTargets()).every(s=>Math.hypot(s.x-p.x,s.y-p.y)>60),c=[];
+  for(const w of W){if(w.w===9)continue;for(let i=0;i<w.p.length;i+=2){const p={x:w.p[i],y:w.p[i+1]},d=Math.hypot(p.x-P.x,p.y-P.y);if(d>=a&&d<=b&&ok(p))c.push(p)}}
+  if(c.length)return c[Math.floor(Math.random()*c.length)];
+  let best=null;for(let k=0;k<40;k++){const ang=Math.random()*6.283,d=a+Math.random()*(b-a),p={x:Math.round(P.x+Math.cos(ang)*d),y:Math.round(P.y+Math.sin(ang)*d)};if(ok(p))return p;best=p}return best}
+function xTick(){
+  if(!G||G.grp||!G.t0||!G.c)return;const X=G.x=G.x||{},n=G.st.filter(s=>s.done).length;
+  if(X.evt&&X.evt.state==="run"&&Date.now()>X.evt.until&&$("#sheet").hidden){X.evt.state="lost";X.evt.done=true;if(sel===X.evt)sel=null;toast(T.evLost);buzz(200);beep(140,.5);save()}
+  if(!$("#sheet").hidden||!$("#ar").hidden||n>=8)return;
+  if(!X.evt&&n>=2){const p=spot(130,230),d=Math.hypot(p.x-P.x,p.y-P.y),k=xFree(),s=Math.round(d/.9+60);
+    X.evt={kind:"evt",x:p.x,y:p.y,name:T.evName,state:"run",done:false,until:Date.now()+s*1000,t:k[G.seed%k.length]};
+    save();buzz([120,60,120,60,300]);beep(880,.15);setTimeout(()=>beep(880,.15),220);
+    sheet('<div class="eyebrow" style="color:#a5392c">'+T.evEy+'</div><h2>'+T.evH+'</h2><p>'+T.evT.replace("{m}",Math.ceil(s/60)).replace("{d}",Math.round(d/10)*10)+'</p><button type="button" class="btn" id="shX">'+T.evOk+'</button>');
+    $("#sheetBody").onclick=e=>{if(e.target.id==="shX"){closeSheet();sel=X.evt;V.follow=true;chip()}}}
+  else if(!X.iv&&n>=5&&!(X.evt&&X.evt.state==="run")){const c=G.c;let cand=63;c.ev.forEach(e=>cand&=e.mask);const cs=c.sus.map((s,i)=>i).filter(i=>cand>>i&1),si=cs[hashStr(G.seed+"iv")%cs.length],p=spot(110,220);
+    X.iv={kind:"iv",x:p.x,y:p.y,name:c.sus[si].name,s:si,done:false,q:null};save();buzz([80,60,80]);beep(520,.25);toast(T.ivGo.replace("{n}",c.sus[si].name))}}
+function xAfter(){const e=G&&G.x&&G.x.evt;if(e&&e.state==="run"){const s=Math.max(0,Math.ceil((e.until-Date.now())/1000));$("#radar").textContent=T.evRadar.replace("{t}",Math.floor(s/60)+":"+String(s%60).padStart(2,"0")).replace("{d}",Math.round(dTo(e)))}
+  if(sel&&sel.kind==="evt"){$("#cHint").textContent=T.evHint;if(inRange(sel))$("#cAct").textContent=T.evAct}
+  else if(sel&&sel.kind==="iv"){$("#cHint").textContent=T.ivHint;if(inRange(sel))$("#cAct").textContent=T.ivAct}}
+function xDraw(t){const X=G.x;if(!X)return;const bob=still?0:Math.sin(t/300)*3;
+  if(X.evt&&X.evt.state==="run"){const e=X.evt,x=sx(e.x),y=sy(e.y),k=still?0:(t/700)%1;cx.strokeStyle="rgba(216,80,63,"+(.8-k*.8)+")";cx.lineWidth=2;cx.beginPath();cx.arc(x,y,12+k*22,0,7);cx.stroke();
+    cx.save();cx.fillStyle="#d8503f";cx.translate(x,y+bob*.5);cx.rotate(Math.PI/4);cx.fillRect(-9,-9,18,18);cx.restore();
+    const s=Math.max(0,Math.ceil((e.until-Date.now())/1000));cx.fillStyle="#ece4d2";cx.fillText(T.evName.toUpperCase()+" · "+Math.floor(s/60)+":"+String(s%60).padStart(2,"0"),x,y+36);if(sel===e){cx.strokeStyle="#ece4d2";cx.lineWidth=2;cx.beginPath();cx.arc(x,y,24,0,7);cx.stroke()}}
+  if(X.iv&&!X.iv.done){const e=X.iv,x=sx(e.x),y=sy(e.y);ghost(cx,x,y+bob*.3,40,"#d8503f",.95);cx.fillStyle="#ece4d2";cx.fillText(e.name.toUpperCase(),x,y+42);if(sel===e){cx.strokeStyle="#ece4d2";cx.lineWidth=2;cx.beginPath();cx.arc(x,y,26,0,7);cx.stroke()}}}
+function evtOpen(e){walkTo=null;if(e.state!=="run")return;if(Date.now()>e.until){xTick();return}
+  e.state="won";e.done=true;e.v=G.c.sus[G.c.killer].tr[e.t];prof.xp+=30;LS.set("ss_prof",prof);sel=null;save();buzz([100,50,100,50,300]);beep(660,.2);setTimeout(()=>beep(990,.4),200);
+  const z=evText(e.t,e.v);
+  sheet('<div class="eyebrow">'+T.evWinEy+'</div><h2>'+T.evWinH+'</h2><p>'+T.evWinT+'</p><div class="clue"><em>'+T.evTag+'</em><b>'+esc(z[0])+'</b>'+esc(z[1])+'</div><p class="note" style="color:#6a6250">'+T.xXp+'</p><button type="button" class="btn" id="shX">'+T.xOn+'</button>');
+  $("#sheetBody").onclick=ev=>{if(ev.target.id==="shX")closeSheet()}}
+function ivAns(e,t){const c=G.c,kv=c.sus[c.killer].tr[t];if(e.s!==c.killer)return witText(t,kv);const o=TR[t].filter(v=>v!==kv);return witText(t,o[hashStr(G.seed+"l"+t)%o.length])}
+function ivSheet(e){walkTo=null;const c=G.c,s=c.sus[e.s],k=xFree();
+  if(e.q){const a=ivAns(e,e.q);say(a,e.s);sheet('<div class="eyebrow">'+T.ivEy+'</div><h2>'+esc(s.name)+'</h2><p class="note" style="color:#6a6250">'+T.ivQ[e.q]+'</p><div class="clue wit"><em>'+esc(s.name)+' · '+esc(s.role)+'</em>„'+esc(T.ivPre)+' '+esc(a)+'”</div><p><b>'+T.ivRule+'</b></p><p class="note" style="color:#6a6250">'+T.xXp+'</p><button type="button" class="btn" id="shX">'+T.xOn+'</button>');
+    $("#sheetBody").onclick=ev=>{if(ev.target.id==="shX")closeSheet()};return}
+  sheet('<div class="eyebrow">'+T.ivEy+'</div><h2>'+esc(s.name)+'</h2><p>'+esc(s.role.replace(/^./,m=>m.toUpperCase()))+', '+esc(vn(motOf(s.name)[0]))+'.</p><p>'+T.ivT+' <b>'+T.ivRule+'</b></p>'+k.map(t=>'<button type="button" class="btn ghost dk" data-q="'+t+'">'+T.ivQ[t]+'</button>').join("")+'<button type="button" class="btn ghost dk" id="shX">'+T.ivLater+'</button>');
+  $("#sheetBody").onclick=ev=>{const b=ev.target.closest("button");if(!b)return;if(b.id==="shX"){closeSheet();return}if(b.dataset.q){e.q=b.dataset.q;e.done=true;prof.xp+=30;LS.set("ss_prof",prof);sel=null;save();ivSheet(e)}}}
+function xHtml(){const X=G&&G.x;if(!X)return"";let h="";
+  if(X.evt&&X.evt.state==="won"){const z=evText(X.evt.t,X.evt.v);h+='<div class="clue"><em>'+T.evTag+'</em><b>'+esc(z[0])+'</b>'+esc(z[1])+'</div>'}
+  if(X.iv&&X.iv.q){const s=G.c.sus[X.iv.s];h+='<div class="clue wit"><em>'+T.ivEy+' · '+esc(s.name)+' · '+T.ivRuleS+'</em>'+T.ivQ[X.iv.q]+' „'+esc(ivAns(X.iv,X.iv.q))+'”</div>'}
+  return h?'<div class="eyebrow">'+T.xNote+'</div><div class="list">'+h+'</div>':""}
 
 home();if(HG)grpOpen(HG[1]);else if(HZ)codeSheet(HZ[1]);
 })();
@@ -1376,6 +1422,7 @@ function draw(t){
     if(sel===s){cx.strokeStyle="#ece4d2";cx.lineWidth=2;cx.beginPath();cx.arc(X,Y,24,0,7);cx.stroke()}
     const lk=!s.done&&!canOpen(s);cx.fillStyle=s.done||lk?"#5f7090":"#ece4d2";if(V.s>=.4||sel===s)cx.fillText((s.done||gotI(i)?"✓ ":"")+(lk?ownTag(i).toUpperCase()+" · ":"")+s.name.toUpperCase().slice(0,26),X,Y+40)});
   G.rare.forEach(q=>{if(q.done||dTo(q)>200)return;const X=sx(q.x),Y=sy(q.y),tier=SHADES[q.id][1];ghost(cx,X,Y-bob*.4,42,tier===3?"#f0a63a":tier===2?"#c9a6ea":"#ffffff",still?.8:.5+.4*Math.abs(Math.sin(t/300)));cx.fillStyle="#ece4d2";cx.fillText("???",X,Y+42);if(sel===q){cx.strokeStyle="#ece4d2";cx.lineWidth=2;cx.beginPath();cx.arc(X,Y,26,0,7);cx.stroke()}});
+  xDraw(t);
   // speler
   const X=sx(P.x),Y=sy(P.y);cx.fillStyle="rgba(240,166,58,.12)";cx.beginPath();cx.arc(X,Y,35*V.s,0,7);cx.fill();cx.strokeStyle="rgba(240,166,58,.5)";cx.lineWidth=1;cx.stroke();
   cx.fillStyle="#f0a63a";cx.beginPath();cx.arc(X,Y,7,0,7);cx.fill();cx.strokeStyle="#101a2b";cx.lineWidth=2;cx.stroke();
@@ -1388,7 +1435,7 @@ function loop(t){
   if(!loop.n||t-loop.n>500){loop.n=t;tick()}
   requestAnimationFrame(loop);
 }
-function targets(){return G.st.filter(s=>!s.done&&canOpen(s)).concat(G.rare.filter(q=>!q.done&&dTo(q)<=200))}
+function targets(){return G.st.filter(s=>!s.done&&canOpen(s)).concat(G.rare.filter(q=>!q.done&&dTo(q)<=200)).concat(xTargets())}
 function tick(){
   const el=Math.floor((Date.now()-G.t0)/1000);$("#hT").textContent=Math.floor(el/60)+":"+String(el%60).padStart(2,"0");
   $("#hS").textContent=G.st.filter((s,i)=>s.done||gotI(i)).length+"/8";$("#hG").textContent=G.rare.filter(q=>q.done).length+"/3";$("#hD").textContent=(G.dist/1000).toFixed(1);
@@ -1398,7 +1445,7 @@ function tick(){
   const here=ts.find(inRange);
   if(here&&arrived!==here&&$("#sheet").hidden){arrived=here;sel=here;buzz([80,60,80]);beep(660,.2)}
   if(!here)arrived=null;
-  chip();if(el%10===0)save();
+  xTick();chip();xAfter();if(el%10===0)save();
 }
 function chip(){
   const c=$("#chip");if(!sel||sel.done){c.hidden=true;return}c.hidden=false;
@@ -1411,6 +1458,7 @@ function chip(){
   else if(d<150)b.textContent="GPS is off, I'm here";
   else b.hidden=true;
   if(G.grp&&!rare&&!canOpen(sel)){$("#cHint").textContent=lockHint(sel);b.hidden=true}
+  xAfter();
 }
 $("#cAct").onclick=()=>{if(!sel||(sel.id==null&&!canOpen(sel)))return;if(inRange(sel))encounter(sel);else if(G.mode==="demo"){walkTo={x:sel.x,y:sel.y};V.follow=true}else if(dTo(sel)<150){G.force=sel;encounter(sel)}};
 let pd=null;
@@ -1542,6 +1590,7 @@ const fragList=()=>{const v=VF[G.c.victim[0]]||T.vfD,k=KF[G.c.sus[G.c.killer].na
 const vn=s=>s.replace(/\{V\}/g,G.c.victim[0]);
 /* ---------- camera: de schaduw in je eigen straat ---------- */
 function encounter(t){
+  if(t.kind==="evt")return evtOpen(t);if(t.kind==="iv")return ivSheet(t);
   const wit=t.id!=null||t.kind==="wit",can=navigator.mediaDevices&&navigator.mediaDevices.getUserMedia;walkTo=null;
   if(!wit||!can||G.cam==="off")return puzzle(t);
   if(G.cam==="on")return startAR(t);
@@ -1609,7 +1658,7 @@ function noteSheet(tab){
   else{const ev=found.filter(s=>s.kind==="ev"),wi=found.filter(s=>s.kind==="wit");
     body=`<div class="eyebrow">Evidence ${ev.length}/3 · always true</div><div class="list">`+(ev.map(s=>`<div class="clue"><b>${esc(c.ev[s.idx].title)}</b>${esc(c.ev[s.idx].text)}</div>`).join("")||`<p class="note" style="color:#6a6250">Nothing found yet.</p>`)+`</div>
     <div class="eyebrow">Witnesses ${wi.length}/5 · one is lying</div><p class="note" style="color:#6a6250">Tap to mark as truth or lie.</p><div class="list">`+(wi.map(s=>`<button type="button" data-w="${s.idx}" class="clue wit m${G.mw[s.idx]}"><em>${esc(s.persona)}${G.tips.includes(s.idx)?" · telling the truth (tip)":""}${G.mw[s.idx]===1?" · truth":G.mw[s.idx]===2?" · lie":""}</em>“${esc(c.wit[s.idx].text)}”</button>`).join("")||`<p class="note" style="color:#6a6250">Nobody questioned yet.</p>`)+`</div>`}
-  sheet(`<h2>Notebook</h2><div class="tabs"><button type="button" data-t="c" aria-selected="${tab==="c"}">Leads</button><button type="button" data-t="s" aria-selected="${tab==="s"}">Suspects</button><button type="button" data-t="v" aria-selected="${tab==="v"}">Story</button>${G.grp?`<button type="button" data-t="g" aria-selected="false">${T.gTab}</button>`:""}</div>${body}${G.grp&&tab==="c"?gotHtml(false):""}<button class="btn ghost" style="color:#1b2233;border-color:#c9bfa6" id="shX">Back to the map</button>`);
+  sheet(`<h2>Notebook</h2><div class="tabs"><button type="button" data-t="c" aria-selected="${tab==="c"}">Leads</button><button type="button" data-t="s" aria-selected="${tab==="s"}">Suspects</button><button type="button" data-t="v" aria-selected="${tab==="v"}">Story</button>${G.grp?`<button type="button" data-t="g" aria-selected="false">${T.gTab}</button>`:""}</div>${body}${G.grp&&tab==="c"?gotHtml(false):""}${tab==="c"?xHtml():""}<button class="btn ghost" style="color:#1b2233;border-color:#c9bfa6" id="shX">Back to the map</button>`);
   $("#sheetBody").onclick=e=>{const b=e.target.closest("button");if(!b)return;if(b.dataset.t)noteSheet(b.dataset.t);else if(b.dataset.s){G.ms[b.dataset.s]^=1;noteSheet("s")}else if(b.dataset.w){G.mw[b.dataset.w]=(G.mw[b.dataset.w]+1)%3;noteSheet("c")}else if(b.id==="shX"){closeSheet()}};
 }
 $("#bNote").onclick=()=>noteSheet("c");
@@ -1852,6 +1901,49 @@ function grpForm(cfg,join){
       else{RUN=pickS();GRP={m:cfg.m,n:cfg.m==="V"?2:cfg.n,me:cfg.me};startGps(Math.floor(Math.random()*4e9))}}}}
 function grpOpen(v){const c=parseG(v);if(!c){toast(T.gBadL);return false}c.me=0;grpForm(c,true);return true}
 $("#bGrp").onclick=()=>{if(!groupLeft())return proSheet("groep");grpForm({m:"S",n:4,me:0},false)};
+
+/* ---------- onderweg: vluchtend bewijs en verhoor ---------- */
+Object.assign(T,{"evName": "Evidence on the run", "evEy": "Now", "evH": "Someone is removing evidence", "evT": "About {d} metres away, someone is trying to make a lead disappear. Get there within {m} minutes and it is yours. A brisk walk will do. Keep watching the traffic.", "evOk": "Go after it", "evLost": "Too late. The evidence is gone.", "evRadar": "Evidence on the run: {t} · {d} m to go", "evHint": "Someone is trying to make this disappear.", "evAct": "Grab the evidence", "evWinEy": "Just in time", "evWinH": "Nobody was meant to find this", "evWinT": "Someone dropped it and vanished into the dark. You have a fourth piece of evidence.", "evTag": "Extra evidence · always true", "ivGo": "{n} is out here. You may ask one question.", "ivHint": "A suspect. You may ask one question.", "ivAct": "Question them", "ivEy": "Interview", "ivT": "You may ask one question. Choose well, because the other one is lost.", "ivRule": "An innocent person tells the truth. The killer lies.", "ivRuleS": "true, unless this is the killer", "ivPre": "I was only passing. But I did see someone.", "ivLater": "Not yet", "ivQ": {"jas": "What coat was that person wearing?", "bril": "Was that person wearing glasses?", "hand": "Which hand did that person use?", "schoen": "What shoes was that person wearing?", "lengte": "How tall was that person?"}, "xXp": "+30 points", "xOn": "Continue", "xNote": "Found along the way"});
+const xFree=()=>Object.keys(TR).filter(t=>!G.c.ev.some(e=>e.trait===t));
+function xTargets(){const X=G.x;if(!X)return[];const o=[];if(X.evt&&X.evt.state==="run")o.push(X.evt);if(X.iv&&!X.iv.done)o.push(X.iv);return o}
+function spot(a,b){const ok=p=>Math.hypot(p.x,p.y)<=G.R*1.1&&G.st.concat(G.rare,xTargets()).every(s=>Math.hypot(s.x-p.x,s.y-p.y)>60),c=[];
+  for(const w of W){if(w.w===9)continue;for(let i=0;i<w.p.length;i+=2){const p={x:w.p[i],y:w.p[i+1]},d=Math.hypot(p.x-P.x,p.y-P.y);if(d>=a&&d<=b&&ok(p))c.push(p)}}
+  if(c.length)return c[Math.floor(Math.random()*c.length)];
+  let best=null;for(let k=0;k<40;k++){const ang=Math.random()*6.283,d=a+Math.random()*(b-a),p={x:Math.round(P.x+Math.cos(ang)*d),y:Math.round(P.y+Math.sin(ang)*d)};if(ok(p))return p;best=p}return best}
+function xTick(){
+  if(!G||G.grp||!G.t0||!G.c)return;const X=G.x=G.x||{},n=G.st.filter(s=>s.done).length;
+  if(X.evt&&X.evt.state==="run"&&Date.now()>X.evt.until&&$("#sheet").hidden){X.evt.state="lost";X.evt.done=true;if(sel===X.evt)sel=null;toast(T.evLost);buzz(200);beep(140,.5);save()}
+  if(!$("#sheet").hidden||!$("#ar").hidden||n>=8)return;
+  if(!X.evt&&n>=2){const p=spot(130,230),d=Math.hypot(p.x-P.x,p.y-P.y),k=xFree(),s=Math.round(d/.9+60);
+    X.evt={kind:"evt",x:p.x,y:p.y,name:T.evName,state:"run",done:false,until:Date.now()+s*1000,t:k[G.seed%k.length]};
+    save();buzz([120,60,120,60,300]);beep(880,.15);setTimeout(()=>beep(880,.15),220);
+    sheet('<div class="eyebrow" style="color:#a5392c">'+T.evEy+'</div><h2>'+T.evH+'</h2><p>'+T.evT.replace("{m}",Math.ceil(s/60)).replace("{d}",Math.round(d/10)*10)+'</p><button type="button" class="btn" id="shX">'+T.evOk+'</button>');
+    $("#sheetBody").onclick=e=>{if(e.target.id==="shX"){closeSheet();sel=X.evt;V.follow=true;chip()}}}
+  else if(!X.iv&&n>=5&&!(X.evt&&X.evt.state==="run")){const c=G.c;let cand=63;c.ev.forEach(e=>cand&=e.mask);const cs=c.sus.map((s,i)=>i).filter(i=>cand>>i&1),si=cs[hashStr(G.seed+"iv")%cs.length],p=spot(110,220);
+    X.iv={kind:"iv",x:p.x,y:p.y,name:c.sus[si].name,s:si,done:false,q:null};save();buzz([80,60,80]);beep(520,.25);toast(T.ivGo.replace("{n}",c.sus[si].name))}}
+function xAfter(){const e=G&&G.x&&G.x.evt;if(e&&e.state==="run"){const s=Math.max(0,Math.ceil((e.until-Date.now())/1000));$("#radar").textContent=T.evRadar.replace("{t}",Math.floor(s/60)+":"+String(s%60).padStart(2,"0")).replace("{d}",Math.round(dTo(e)))}
+  if(sel&&sel.kind==="evt"){$("#cHint").textContent=T.evHint;if(inRange(sel))$("#cAct").textContent=T.evAct}
+  else if(sel&&sel.kind==="iv"){$("#cHint").textContent=T.ivHint;if(inRange(sel))$("#cAct").textContent=T.ivAct}}
+function xDraw(t){const X=G.x;if(!X)return;const bob=still?0:Math.sin(t/300)*3;
+  if(X.evt&&X.evt.state==="run"){const e=X.evt,x=sx(e.x),y=sy(e.y),k=still?0:(t/700)%1;cx.strokeStyle="rgba(216,80,63,"+(.8-k*.8)+")";cx.lineWidth=2;cx.beginPath();cx.arc(x,y,12+k*22,0,7);cx.stroke();
+    cx.save();cx.fillStyle="#d8503f";cx.translate(x,y+bob*.5);cx.rotate(Math.PI/4);cx.fillRect(-9,-9,18,18);cx.restore();
+    const s=Math.max(0,Math.ceil((e.until-Date.now())/1000));cx.fillStyle="#ece4d2";cx.fillText(T.evName.toUpperCase()+" · "+Math.floor(s/60)+":"+String(s%60).padStart(2,"0"),x,y+36);if(sel===e){cx.strokeStyle="#ece4d2";cx.lineWidth=2;cx.beginPath();cx.arc(x,y,24,0,7);cx.stroke()}}
+  if(X.iv&&!X.iv.done){const e=X.iv,x=sx(e.x),y=sy(e.y);ghost(cx,x,y+bob*.3,40,"#d8503f",.95);cx.fillStyle="#ece4d2";cx.fillText(e.name.toUpperCase(),x,y+42);if(sel===e){cx.strokeStyle="#ece4d2";cx.lineWidth=2;cx.beginPath();cx.arc(x,y,26,0,7);cx.stroke()}}}
+function evtOpen(e){walkTo=null;if(e.state!=="run")return;if(Date.now()>e.until){xTick();return}
+  e.state="won";e.done=true;e.v=G.c.sus[G.c.killer].tr[e.t];prof.xp+=30;LS.set("ss_prof",prof);sel=null;save();buzz([100,50,100,50,300]);beep(660,.2);setTimeout(()=>beep(990,.4),200);
+  const z=evText(e.t,e.v);
+  sheet('<div class="eyebrow">'+T.evWinEy+'</div><h2>'+T.evWinH+'</h2><p>'+T.evWinT+'</p><div class="clue"><em>'+T.evTag+'</em><b>'+esc(z[0])+'</b>'+esc(z[1])+'</div><p class="note" style="color:#6a6250">'+T.xXp+'</p><button type="button" class="btn" id="shX">'+T.xOn+'</button>');
+  $("#sheetBody").onclick=ev=>{if(ev.target.id==="shX")closeSheet()}}
+function ivAns(e,t){const c=G.c,kv=c.sus[c.killer].tr[t];if(e.s!==c.killer)return witText(t,kv);const o=TR[t].filter(v=>v!==kv);return witText(t,o[hashStr(G.seed+"l"+t)%o.length])}
+function ivSheet(e){walkTo=null;const c=G.c,s=c.sus[e.s],k=xFree();
+  if(e.q){const a=ivAns(e,e.q);say(a,e.s);sheet('<div class="eyebrow">'+T.ivEy+'</div><h2>'+esc(s.name)+'</h2><p class="note" style="color:#6a6250">'+T.ivQ[e.q]+'</p><div class="clue wit"><em>'+esc(s.name)+' · '+esc(s.role)+'</em>„'+esc(T.ivPre)+' '+esc(a)+'”</div><p><b>'+T.ivRule+'</b></p><p class="note" style="color:#6a6250">'+T.xXp+'</p><button type="button" class="btn" id="shX">'+T.xOn+'</button>');
+    $("#sheetBody").onclick=ev=>{if(ev.target.id==="shX")closeSheet()};return}
+  sheet('<div class="eyebrow">'+T.ivEy+'</div><h2>'+esc(s.name)+'</h2><p>'+esc(s.role.replace(/^./,m=>m.toUpperCase()))+', '+esc(vn(motOf(s.name)[0]))+'.</p><p>'+T.ivT+' <b>'+T.ivRule+'</b></p>'+k.map(t=>'<button type="button" class="btn ghost dk" data-q="'+t+'">'+T.ivQ[t]+'</button>').join("")+'<button type="button" class="btn ghost dk" id="shX">'+T.ivLater+'</button>');
+  $("#sheetBody").onclick=ev=>{const b=ev.target.closest("button");if(!b)return;if(b.id==="shX"){closeSheet();return}if(b.dataset.q){e.q=b.dataset.q;e.done=true;prof.xp+=30;LS.set("ss_prof",prof);sel=null;save();ivSheet(e)}}}
+function xHtml(){const X=G&&G.x;if(!X)return"";let h="";
+  if(X.evt&&X.evt.state==="won"){const z=evText(X.evt.t,X.evt.v);h+='<div class="clue"><em>'+T.evTag+'</em><b>'+esc(z[0])+'</b>'+esc(z[1])+'</div>'}
+  if(X.iv&&X.iv.q){const s=G.c.sus[X.iv.s];h+='<div class="clue wit"><em>'+T.ivEy+' · '+esc(s.name)+' · '+T.ivRuleS+'</em>'+T.ivQ[X.iv.q]+' „'+esc(ivAns(X.iv,X.iv.q))+'”</div>'}
+  return h?'<div class="eyebrow">'+T.xNote+'</div><div class="list">'+h+'</div>':""}
 
 home();if(HG)grpOpen(HG[1]);else if(HZ)codeSheet(HZ[1]);
 })();
