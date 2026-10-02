@@ -163,9 +163,14 @@ a.btn{text-decoration:none}
         <button type="button" data-r="380" data-par="45" aria-pressed="false">Kort · 45 min</button>
         <button type="button" data-r="650" data-par="90" aria-pressed="true">Volledig · 90 min</button>
       </div>
+      <div class="eyebrow">Kies je verhaal</div>
+      <div class="seg" id="stories"></div>
+      <p class="note" id="stTag"></p>
       <button class="btn" id="bResume" hidden>Ga verder met je zaak</button>
       <button class="btn" id="bGps">Start de zaak van vandaag</button>
       <button class="btn ghost" id="bRandom">Extra zaak op deze plek</button>
+      <button class="btn ghost" id="bCode">Zaakcode invoeren</button>
+      <button class="btn ghost" id="bGrp">Groepszaak</button>
       <button class="btn ghost sm" id="bDemo">Proefronde in fictief Amsterdam</button>
       <button class="btn ghost" id="bPro" hidden></button>
       <p class="note" id="status"></p>
@@ -175,6 +180,7 @@ a.btn{text-decoration:none}
         <li>Zeldzame schimmen duiken alleen op als je dichtbij bent. Vang ze voor je Schimmenboek en een tip.</li>
       </ol>
       <button class="btn ghost" id="bBookHome">Schimmenboek</button>
+      <button class="btn ghost" id="bArch">Archief</button>
       <button class="btn ghost sm" id="bWipe">Wissen</button>
       <p class="note">Blijf op de openbare weg en let op het verkeer. Je hoeft nergens naar binnen.</p>
     </div>
@@ -189,6 +195,7 @@ a.btn{text-decoration:none}
         <div class="eyebrow">Zes verdachten</div>
         <div class="list" id="bfSus"></div>
       </div>
+      <button class="btn ghost" id="bInv" hidden>Stuur de uitnodiging</button>
       <button class="btn" id="bGo">De nacht in</button>
       <button class="btn ghost" id="bBack">Terug</button>
     </div>
@@ -258,10 +265,10 @@ function witText(t,v){
 function traitMask(sus,t,v){let m=0;sus.forEach((s,i)=>{if(s.tr[t]===v)m|=1<<i});return m}
 function solve(c){ // alle daders die passen bij: bewijs waar, precies één getuige liegt
   const out=[];for(let k=0;k<6;k++){if(c.ev.some(e=>!(e.mask>>k&1)))continue;let lies=0;c.wit.forEach(w=>{if(!(w.mask>>k&1))lies++});if(lies===1)out.push(k)}return out}
-function genCase(seed){
+function genCase(seed,S){
   const r=rngOf(seed),pick=a=>a[Math.floor(r()*a.length)];
   for(let tries=0;tries<4000;tries++){
-    const sus=shuffle(POOL,r).slice(0,6).map(p=>{const tr={};for(const t in TR)tr[t]=pick(TR[t]);return{name:p[0],role:p[1],tr}});
+    const sus=shuffle(S?S.pool:POOL,r).slice(0,6).map(p=>{const tr={};for(const t in TR)tr[t]=pick(TR[t]);return{name:p[0],role:p[1],tr}});
     const k=Math.floor(r()*6),keys=shuffle(Object.keys(TR),r),evT=keys.slice(0,3),free=keys.slice(3);
     const ev=evT.map(t=>{const v=sus[k].tr[t],x=evText(t,v);return{trait:t,val:v,mask:traitMask(sus,t,v),title:x[0],text:x[1]}});
     let cand=63;ev.forEach(e=>cand&=e.mask);let n=0;for(let i=0;i<6;i++)n+=cand>>i&1;if(n<2||n>3)continue;
@@ -280,7 +287,7 @@ function genCase(seed){
       }
     }
     if(!ok)continue;
-    const c={seed,victim:pick(VICTIMS),sus,killer:k,ev,wit,liar};
+    const c={seed,victim:pick(S?S.vic:VICTIMS),sus,killer:k,ev,wit,liar};
     const s=solve(c);if(s.length===1&&s[0]===k)return c;
   }
   return null;
@@ -336,8 +343,8 @@ function home(){
   const pro=isPro(),lk=locked();
   $("#bGps").textContent=(lk?"🔒 ":"")+(prof.last===today()?"Speel de zaak van vandaag opnieuw":"Start de zaak van vandaag");
   $("#bRandom").textContent=(lk?"🔒 ":"")+T.pExtra;$("#bPro").hidden=pro;$("#bPro").textContent=T.pBtn+" · "+PRO.price;
-  $("#status").textContent=pro?T.pOn:lk?T.pUsed:T.pFree;
-  show("home");heroStart();
+  $("#status").textContent=(pro?T.pOn:lk?T.pUsed:T.pFree)+(groupLeft()?" "+T.gpOn.replace("{h}",Math.ceil(groupLeft()/36e5)):"");$("#bGrp").textContent=(groupLeft()?"":"🔒 ")+T.bGrp;
+  storyUI();show("home");heroStart();
 }
 $("#len").addEventListener("click",e=>{const b=e.target.closest("button");if(!b)return;R0=+b.dataset.r;PAR=+b.dataset.par;document.querySelectorAll("#len button").forEach(x=>x.setAttribute("aria-pressed",x===b))});
 $("#bGps").onclick=()=>locked()?proSheet():startGps(hashStr(today()));
@@ -348,12 +355,42 @@ $("#bResume").onclick=()=>{G=LS.get("ss_game",null);W=LS.get("ss_ways",[]);if(!G
 $("#bBookHome").onclick=()=>bookSheet();
 
 /* ---------- Pro ---------- */
-const PRO=window.SS_PRO||{},proNorm=s=>String(s||"").toUpperCase().replace(/[^A-Z0-9]/g,"");
-function isPro(){return !PRO.hash||hashStr(proNorm(LS.get("ss_pro","")))===PRO.hash}
+/* ---------- Pro en groepspas: codes uit codes.json ---------- */
+const PRO=window.SS_PRO||{},GP=PRO.groep||{},proNorm=s=>String(s||"").toUpperCase().replace(/[^A-Z0-9]/g,"");
+function sha256(s){const K=[],H=[],W=[];let n=2,i=0;const fr=x=>((x-Math.floor(x))*4294967296)|0;
+  for(;i<64;n++){let p=true;for(let d=2;d*d<=n;d++)if(n%d===0){p=false;break}if(p){if(i<8)H[i]=fr(Math.pow(n,.5));K[i++]=fr(Math.pow(n,1/3))}}
+  const b=unescape(encodeURIComponent(s)),l=b.length,m=[];for(i=0;i<l;i++)m[i>>2]|=b.charCodeAt(i)<<(24-i%4*8);m[l>>2]|=0x80<<(24-l%4*8);m[((l+8>>6)<<4)+15]=l*8;
+  const R=(x,k)=>x>>>k|x<<(32-k);
+  for(let j=0;j<m.length;j+=16){let a=H[0],b2=H[1],c=H[2],d=H[3],e=H[4],f=H[5],g=H[6],h=H[7];
+    for(i=0;i<64;i++){W[i]=i<16?m[j+i]|0:(R(W[i-2],17)^R(W[i-2],19)^W[i-2]>>>10)+W[i-7]+(R(W[i-15],7)^R(W[i-15],18)^W[i-15]>>>3)+W[i-16]|0;
+      const t1=h+(R(e,6)^R(e,11)^R(e,25))+(e&f^~e&g)+K[i]+W[i]|0,t2=(R(a,2)^R(a,13)^R(a,22))+(a&b2^a&c^b2&c)|0;h=g;g=f;f=e;e=d+t1|0;d=c;c=b2;b2=a;a=t1+t2|0}
+    H[0]=H[0]+a|0;H[1]=H[1]+b2|0;H[2]=H[2]+c|0;H[3]=H[3]+d|0;H[4]=H[4]+e|0;H[5]=H[5]+f|0;H[6]=H[6]+g|0;H[7]=H[7]+h|0}
+  return H.map(x=>(x>>>0).toString(16).padStart(8,"0")).join("")}
+let CODES=LS.get("ss_codes",[]),codesOk=false;
+const codesP=fetch("codes.json?"+Date.now(),{cache:"no-store"}).then(r=>{if(!r.ok)throw 0;return r.json()}).then(d=>{CODES=(d&&d.codes)||[];LS.set("ss_codes",CODES);codesOk=true;if(!$("#home").hidden&&$("#sheet").hidden&&!G)home()}).catch(()=>{});
+const entry=h=>CODES.find(x=>x&&x.h===h),dayNum=s=>{const p=String(s).split("-");return p[0]*10000+p[1]*100+ +p[2]};
+function valid(e,t){return !!e&&!e.uit&&(e.t||"pro")===t&&(!e.tot||dayNum(today())<=dayNum(e.tot))}
+// wie de oude code al had ingevoerd, blijft Pro
+if(!LS.get("ss_proH","")&&PRO.hash&&hashStr(proNorm(LS.get("ss_pro","")))===PRO.hash)LS.set("ss_proH","oud");
+function isPro(){const h=LS.get("ss_proH","");if(!h)return false;const e=entry(h);return !(e&&e.uit)}
 function locked(){return !isPro()&&!!LS.get("ss_free",0)}
-function proSheet(){
-  sheet('<div class="eyebrow">Pro</div><h2>'+T.pH+'</h2><p>'+T.pT+'</p><a class="btn" href="'+esc(PRO.url||"#")+'" target="_blank" rel="noopener">'+T.pBtn+' · '+esc(PRO.price||"")+'</a><div class="eyebrow">'+T.pHave+'</div><input class="inp" id="pCode" autocomplete="off" autocapitalize="characters" spellcheck="false" aria-label="'+T.pHave+'"><button type="button" class="btn ghost dk" id="pOk">'+T.pUse+'</button><p class="note" id="pMsg" style="color:#a5392c"></p><button type="button" class="btn ghost dk" id="shX">'+T.cancel+'</button>');
-  const go=()=>{const c=proNorm($("#pCode").value);if(c&&hashStr(c)===PRO.hash){LS.set("ss_pro",c);closeSheet();home();toast(T.pOk)}else{$("#pMsg").textContent=T.pBad;buzz(120)}};
+function groupLeft(){const g=LS.get("ss_grp",null);if(!g)return 0;const e=entry(g.h);if(e&&e.uit)return 0;return Math.max(0,g.t0+(GP.uren||48)*36e5-Date.now())}
+function redeem(v){const c=proNorm(v);if(!c)return null;
+  if(PRO.hash&&hashStr(c)===PRO.hash){LS.set("ss_proH","oud");return"pro"}
+  const h=sha256("moordwandeling|"+c),e=entry(h);if(!e)return null;
+  if(valid(e,"pro")){LS.set("ss_proH",h);return"pro"}
+  if(valid(e,"groep")){const cur=LS.get("ss_grp",null),used=LS.get("ss_grpU",[]);if(cur&&cur.h===h&&groupLeft())return"groep";if(used.includes(h))return"used";
+    used.push(h);LS.set("ss_grpU",used);LS.set("ss_grp",{h,t0:Date.now()});return"groep"}
+  return"exp"}
+function proSheet(kind){
+  const g=kind==="groep",url=g?GP.url:PRO.url,price=g?GP.price:PRO.price,U=s=>s.replace(/\{u\}/g,GP.uren||48).replace(/\{n\}/g,GP.max||10);
+  sheet('<div class="eyebrow">'+(g?T.bGrp:"Pro")+'</div><h2>'+(g?T.gpH:T.pH)+'</h2><p>'+(g?U(T.gpT):T.pT)+'</p>'+(url?'<a class="btn" href="'+esc(url)+'" target="_blank" rel="noopener">'+(g?T.gpBtn:T.pBtn)+(price?' · '+esc(price):'')+'</a>':'')+'<div class="eyebrow">'+T.pHave+'</div><input class="inp" id="pCode" autocomplete="off" autocapitalize="characters" spellcheck="false" aria-label="'+T.pHave+'"><button type="button" class="btn ghost dk" id="pOk">'+T.pUse+'</button><p class="note" id="pMsg" style="color:#a5392c"></p><button type="button" class="btn ghost dk" id="shX">'+T.cancel+'</button>');
+  let busy=false;
+  const go=async()=>{if(busy)return;busy=true;const v=$("#pCode").value,m=$("#pMsg");if(!codesOk){m.textContent=T.pWait;await codesP}
+    const r=redeem(v);busy=false;
+    if(r==="pro"){closeSheet();home();toast(T.pOk)}
+    else if(r==="groep"){closeSheet();home();toast(U(T.gpOk))}
+    else{const e=$("#pMsg");if(e)e.textContent=r==="exp"?T.pExp:r==="used"?T.pUsedC:!codesOk&&CODES.length===0?T.pNoNet:T.pBad;buzz(120)}};
   $("#sheetBody").onclick=e=>{if(e.target.id==="shX")closeSheet();else if(e.target.id==="pOk")go()};
   $("#pCode").onkeydown=e=>{if(e.key==="Enter")go()};
 }
@@ -371,13 +408,15 @@ function startGps(seed){
   if(!navigator.geolocation){fail("Dit toestel geeft geen locatie door. Je kunt wel de oefenronde spelen.");return}
   st.textContent="Je locatie zoeken…";
   navigator.geolocation.getCurrentPosition(async pos=>{
-    const lat=pos.coords.latitude,lon=pos.coords.longitude,R=R0;
+    const gl=GRP&&GRP.o,lat=gl?gl[0]:pos.coords.latitude,lon=gl?gl[1]:pos.coords.longitude,R=R0;if(gl&&Math.hypot((pos.coords.longitude-lon)*111320*Math.cos(lat*Math.PI/180),(pos.coords.latitude-lat)*110540)>2500)toast(T.gFar);
     const kx=111320*Math.cos(lat*Math.PI/180),ky=110540,xy=(la,lo)=>[(lo-lon)*kx,-(la-lat)*ky],A="(around:"+R+","+lat+","+lon+")";
-    const hosts=["https://overpass-api.de/api/interpreter","https://overpass.private.coffee/api/interpreter","https://maps.mail.ru/osm/tools/overpass/api/interpreter"];
-    // alle servers tegelijk vragen; de eerste die antwoordt wint
-    const ask=(q,ms)=>{const ac=new AbortController(),to=setTimeout(()=>ac.abort(),ms);
-      return Promise.any(hosts.map(h=>fetch(h,{method:"POST",headers:{"Content-Type":"application/x-www-form-urlencoded"},body:"data="+encodeURIComponent(q),signal:ac.signal}).then(r=>{if(!r.ok)throw new Error("server "+r.status);return r.json()})))
-        .then(d=>{clearTimeout(to);ac.abort();return d},e=>{clearTimeout(to);throw e})};
+    const hosts=window.SS_MAP||["https://overpass.private.coffee/api/interpreter","https://maps.mail.ru/osm/tools/overpass/api/interpreter","https://overpass-api.de/api/interpreter"];
+    // eerst één server; pas na 4 en 8 seconden zonder antwoord (of meteen bij een fout) de volgende erbij
+    const ask=(q,ms)=>new Promise((res,rej)=>{const ac=new AbortController(),ts=[];let nx=0,left=hosts.length,done=false;
+      const fin=(ok,v)=>{if(done)return;done=true;ts.forEach(clearTimeout);ac.abort();ok?res(v):rej(v)};
+      const start=()=>{if(done||nx>=hosts.length)return;const h=hosts[nx++];
+        fetch(h,{method:"POST",headers:{"Content-Type":"application/x-www-form-urlencoded"},body:"data="+encodeURIComponent(q),signal:ac.signal}).then(r=>{if(!r.ok)throw new Error("server "+r.status);return r.json()}).then(d=>fin(true,d),e=>{if(--left<=0)fin(false,e);else start()})};
+      start();ts.push(setTimeout(start,4000),setTimeout(start,8000),setTimeout(()=>fin(false,new Error("timeout")),ms))});
     let pois=[],ways=[];const c=LS.get("ss_map",null);
     // deze buurt al eens geladen: meteen starten
     if(c&&c.R>=R&&c.pois&&c.pois.length&&Math.hypot((c.lon-lon)*kx,(c.lat-lat)*ky)<150){const ox=(c.lon-lon)*kx,oy=-(c.lat-lat)*ky;
@@ -385,7 +424,7 @@ function startGps(seed){
       st.textContent="";build(seed,"gps",pois,ways,{lat,lon,kx,ky});return}
     st.textContent="Plekken in je buurt zoeken…";
     try{
-      const d=await ask('[out:json][timeout:15];(nwr'+A+'[amenity~"^(place_of_worship|bank|atm|cafe|pub|bar|restaurant|pharmacy|post_box|library|school|fuel)$"];nwr'+A+'[tourism~"^(hotel|artwork|museum)$"];nwr'+A+'[shop~"^(supermarket|bakery|convenience)$"];node'+A+'[highway=bus_stop];nwr'+A+'[leisure~"^(park|playground)$"];);out center qt 400;',18000);
+      const d=GRP&&GRP.st?{elements:[]}:await ask('[out:json][timeout:15];(nwr'+A+'[amenity~"^(place_of_worship|bank|atm|cafe|pub|bar|restaurant|pharmacy|post_box|library|school|fuel)$"];nwr'+A+'[tourism~"^(hotel|artwork|museum)$"];nwr'+A+'[shop~"^(supermarket|bakery|convenience)$"];node'+A+'[highway=bus_stop];nwr'+A+'[leisure~"^(park|playground)$"];);out center qt 400;',18000);
       for(const e of d.elements||[]){const ty=poiType(e.tags),q=e.type==="node"?[e.lat,e.lon]:e.center?[e.center.lat,e.center.lon]:null;if(!ty||!q)continue;const p=xy(q[0],q[1]);pois.push({x:p[0],y:p[1],type:ty,name:e.tags.name||""})}
     }catch(e){toast("De kaartdienst reageert niet. Je sporen liggen op loopafstand om je heen.")}
     st.textContent="";build(seed,"gps",pois,[],{lat,lon,kx,ky});
@@ -409,7 +448,7 @@ function demoWorld(){
   return{ways,pois:L.map(l=>{const t=l[1]*Math.PI/180;return{x:Math.round(l[0]*Math.cos(t)),y:Math.round(cy+l[0]*Math.sin(t)),type:l[2],name:l[3]}})};
 }
 function build(seed,mode,pois,ways,origin){
-  const c=genCase(seed);if(!c){toast("Deze zaak wil niet kloppen. Probeer een extra zaak.");return}
+  const SD=STORIES[RUN]||STORIES.c,c=genCase(seed,SD.pool?SD:null);if(!c){toast("Deze zaak wil niet kloppen. Probeer een extra zaak.");return}
   const r=rngOf(seed^0x9e3779b9),R=R0,far=(p,l,m)=>l.every(q=>Math.hypot(q.x-p.x,q.y-p.y)>=m);
   let min=Math.max(90,R*.24);const ch=[],cand=shuffle(pois.filter(p=>{const d=Math.hypot(p.x,p.y);return d>70&&d<=R}),r).sort((a,b)=>PRI.indexOf(a.type)-PRI.indexOf(b.type));
   for(let pass=0;pass<2&&ch.length<8;pass++)for(const p of cand){if(ch.length>=8)break;const n=ch.filter(q=>q.type===p.type).length;if(ch.includes(p)||n>pass||p.type==="bankje"&&pass===0&&cand.length>12)continue;if(far(p,ch,min))ch.push(p)}
@@ -422,21 +461,22 @@ function build(seed,mode,pois,ways,origin){
   const order=shuffle(ch,r),usedP={},spare=SPARE.slice();
   // plaats delict liefst park of rustige hoek
   const pd=order.findIndex(p=>p.type==="park");if(pd>0)[order[0],order[pd]]=[order[pd],order[0]];
+  if(GRP&&GRP.st){order.length=0;GRP.st.forEach(q=>order.push({x:q.x,y:q.y,type:q.type,name:q.name||""}))}
   const st=order.map((p,i)=>{const T=TYPES[p.type];let persona=T[1];if(i>=3){if(usedP[persona])persona=spare.shift()||"een voorbijganger";usedP[persona]=1}
-    return{x:Math.round(p.x),y:Math.round(p.y),type:p.type,name:p.name||T[0].replace(/^(de|het) /,"").replace(/^./,m=>m.toUpperCase()),noun:T[0],kind:i<3?"ev":"wit",idx:i<3?i:i-3,persona:i>=3?persona:"",done:false}});
+    return{x:Math.round(p.x),y:Math.round(p.y),type:p.type,nm:p.name||"",name:p.name||T[0].replace(/^(de|het) /,"").replace(/^./,m=>m.toUpperCase()),noun:T[0],kind:i<3?"ev":"wit",idx:i<3?i:i-3,persona:i>=3?persona:"",done:false}});
   // zeldzame schimmen tussen de sporen
-  const rare=[];for(let i=0;i<3;i++){const a=st[Math.floor(r()*st.length)],b=st[Math.floor(r()*st.length)],f=.3+.4*r(),x=r(),tier=x<.08?3:x<.35?2:1,opts=SHADES.map((s,j)=>j).filter(j=>SHADES[j][1]===tier&&!rare.some(q=>q.id===j));
-    rare.push({x:Math.round(a.x+(b.x-a.x)*f+(r()-.5)*120),y:Math.round(a.y+(b.y-a.y)*f+(r()-.5)*120),id:opts[Math.floor(r()*opts.length)],done:false})}
-  G={mode,R,par:PAR,seed,c,st,rare,t0:0,dist:0,ms:[0,0,0,0,0,0],mw:[0,0,0,0,0],tips:[],tries:0,origin,px:0,py:0};
+  const rare=[];{const r=rngOf(seed^0x85ebca6b);for(let i=0;i<3;i++){const a=st[Math.floor(r()*st.length)],b=st[Math.floor(r()*st.length)],f=.3+.4*r(),x=r(),tier=x<.08?3:x<.35?2:1,opts=SHADES.map((s,j)=>j).filter(j=>SHADES[j][1]===tier&&!rare.some(q=>q.id===j));
+    rare.push({x:Math.round(a.x+(b.x-a.x)*f+(r()-.5)*120),y:Math.round(a.y+(b.y-a.y)*f+(r()-.5)*120),id:opts[Math.floor(r()*opts.length)],done:false})}}
+  G={mode,R,par:PAR,seed,c,st,rare,t0:0,dist:0,ms:[0,0,0,0,0,0],mw:[0,0,0,0,0],tips:[],tries:0,origin,px:0,py:0,story:RUN,code:codeOf(RUN,PAR,seed),grp:GRP?mkGrp(seed):null};GRP=null;
   W=ways;P={x:0,y:0,acc:0};LS.set("ss_ways",W);
   // briefing
-  const v=c.victim;$("#bfNo").textContent="Dossier "+String(seed%10000).padStart(4,"0")+(mode==="demo"?" · oefenronde":"");
+  const v=c.victim;$("#bfNo").textContent="Dossier "+G.code+" · "+SD.n+(mode==="demo"?" · oefenronde":"");
   $("#bfTitle").textContent="De dood van "+v[0];
-  $("#bfText").textContent=v[0]+", "+v[1]+", is om 23.40 uur dood gevonden bij "+st[0].noun+(st[0].name&&!/^(Kerk|Bank|Park|Straathoek)/.test(st[0].name)?" ("+st[0].name+")":"")+". "+v[2]+" Drie plekken bewaren bewijs. Op vijf plekken hangt een schim rond die iets zag. Precies één van die vijf liegt.";
-  $("#bfSus").innerHTML=c.sus.map(susCard).join("");show("brief");
+  $("#bfText").textContent=(SD.intro?SD.intro+" ":"")+v[0]+", "+v[1]+", is om 23.40 uur dood gevonden bij "+st[0].noun+(st[0].name&&!/^(Kerk|Bank|Park|Straathoek)/.test(st[0].name)?" ("+st[0].name+")":"")+". "+v[2]+" Drie plekken bewaren bewijs. Op vijf plekken hangt een schim rond die iets zag. Precies één van die vijf liegt.";
+  grpBrief();$("#bfSus").innerHTML=c.sus.map(susCard).join("");show("brief");
 }
 function susCard(s,i){return `<div class="sus"><b>${esc(s.name)}</b><small>${esc(s.role)}, ${esc(vn(motOf(s.name)[0]))}</small><div class="tags"><i>${ADJ[s.tr.jas]} jas</i><i>${s.tr.bril}</i><i>${s.tr.hand}handig</i><i>${s.tr.schoen}</i><i>${s.tr.lengte==="lang"?"lang":"klein"}</i></div></div>`}
-$("#bGo").onclick=()=>{G.t0=Date.now();if(G.mode==="gps")LS.set("ss_free",1);save();enter()};
+$("#bGo").onclick=()=>{G.t0=Date.now();if(G.mode==="gps"&&!G.grp)LS.set("ss_free",1);save();enter()};
 function save(){if(G){G.px=P.x;G.py=P.y;LS.set("ss_game",G)}}
 function enter(){
   show("play");V.follow=true;V.s=Math.min(innerWidth,innerHeight)/(G.R*1.5);sel=null;walkTo=null;arrived=null;$("#chip").hidden=true;
@@ -473,10 +513,10 @@ function draw(t){
   const bob=still?0:Math.sin(t/500)*3;
   cx.font="600 12px 'Barlow Condensed','Arial Narrow',sans-serif";cx.textAlign="center";
   G.st.forEach((s,i)=>{const X=sx(s.x),Y=sy(s.y);
-    if(s.kind==="wit")ghost(cx,X,Y+(s.done?0:bob*.4),38,"#a6ead9",s.done?.3:.95);
-    else{cx.save();cx.globalAlpha=s.done?.35:1;cx.fillStyle="#f0a63a";cx.translate(X,Y);cx.rotate(Math.PI/4);cx.fillRect(-9,-9,18,18);cx.restore();if(!s.done&&!still){cx.strokeStyle="rgba(240,166,58,"+(.6-((t/1500)%1)*.6)+")";cx.lineWidth=2;cx.beginPath();cx.arc(X,Y,12+((t/1500)%1)*16,0,7);cx.stroke()}}
+    if(s.kind==="wit")ghost(cx,X,Y+(s.done?0:bob*.4),38,"#a6ead9",s.done?.3:canOpen(s)?.95:.4);
+    else{cx.save();cx.globalAlpha=s.done?.35:canOpen(s)?1:.4;cx.fillStyle="#f0a63a";cx.translate(X,Y);cx.rotate(Math.PI/4);cx.fillRect(-9,-9,18,18);cx.restore();if(!s.done&&!still&&canOpen(s)){cx.strokeStyle="rgba(240,166,58,"+(.6-((t/1500)%1)*.6)+")";cx.lineWidth=2;cx.beginPath();cx.arc(X,Y,12+((t/1500)%1)*16,0,7);cx.stroke()}}
     if(sel===s){cx.strokeStyle="#ece4d2";cx.lineWidth=2;cx.beginPath();cx.arc(X,Y,24,0,7);cx.stroke()}
-    cx.fillStyle=s.done?"#5f7090":"#ece4d2";if(V.s>=.4||sel===s)cx.fillText((s.done?"✓ ":"")+s.name.toUpperCase().slice(0,26),X,Y+40)});
+    const lk=!s.done&&!canOpen(s);cx.fillStyle=s.done||lk?"#5f7090":"#ece4d2";if(V.s>=.4||sel===s)cx.fillText((s.done||gotI(i)?"✓ ":"")+(lk?ownTag(i).toUpperCase()+" · ":"")+s.name.toUpperCase().slice(0,26),X,Y+40)});
   G.rare.forEach(q=>{if(q.done||dTo(q)>200)return;const X=sx(q.x),Y=sy(q.y),tier=SHADES[q.id][1];ghost(cx,X,Y-bob*.4,42,tier===3?"#f0a63a":tier===2?"#c9a6ea":"#ffffff",still?.8:.5+.4*Math.abs(Math.sin(t/300)));cx.fillStyle="#ece4d2";cx.fillText("???",X,Y+42);if(sel===q){cx.strokeStyle="#ece4d2";cx.lineWidth=2;cx.beginPath();cx.arc(X,Y,26,0,7);cx.stroke()}});
   // speler
   const X=sx(P.x),Y=sy(P.y);cx.fillStyle="rgba(240,166,58,.12)";cx.beginPath();cx.arc(X,Y,35*V.s,0,7);cx.fill();cx.strokeStyle="rgba(240,166,58,.5)";cx.lineWidth=1;cx.stroke();
@@ -490,13 +530,13 @@ function loop(t){
   if(!loop.n||t-loop.n>500){loop.n=t;tick()}
   requestAnimationFrame(loop);
 }
-function targets(){return G.st.filter(s=>!s.done).concat(G.rare.filter(q=>!q.done&&dTo(q)<=200))}
+function targets(){return G.st.filter(s=>!s.done&&canOpen(s)).concat(G.rare.filter(q=>!q.done&&dTo(q)<=200))}
 function tick(){
   const el=Math.floor((Date.now()-G.t0)/1000);$("#hT").textContent=Math.floor(el/60)+":"+String(el%60).padStart(2,"0");
-  $("#hS").textContent=G.st.filter(s=>s.done).length+"/8";$("#hG").textContent=G.rare.filter(q=>q.done).length+"/3";$("#hD").textContent=(G.dist/1000).toFixed(1).replace(".",",");
+  $("#hS").textContent=G.st.filter((s,i)=>s.done||gotI(i)).length+"/8";$("#hG").textContent=G.rare.filter(q=>q.done).length+"/3";$("#hD").textContent=(G.dist/1000).toFixed(1).replace(".",",");
   const ts=targets();let near=null,nd=1e9;ts.forEach(s=>{const d=dTo(s);if(d<nd){nd=d;near=s}});
   nearD=nd;const rr=G.rare.find(q=>!q.done&&dTo(q)<=320&&dTo(q)>200);
-  $("#radar").textContent=!near?"Alle sporen binnen. Tijd om te beschuldigen.":rr?"Er waart iets rond, vlakbij…":nd<60?"Heet. Nog "+Math.round(nd)+" m":nd<150?"Warm. Nog "+Math.round(nd)+" m":"Dichtstbijzijnde spoor: "+Math.round(nd)+" m";
+  $("#radar").textContent=!near?G.grp&&!G.st.every(s=>s.done)?T.gRadar:"Alle sporen binnen. Tijd om te beschuldigen.":rr?"Er waart iets rond, vlakbij…":nd<60?"Heet. Nog "+Math.round(nd)+" m":nd<150?"Warm. Nog "+Math.round(nd)+" m":"Dichtstbijzijnde spoor: "+Math.round(nd)+" m";
   const here=ts.find(inRange);
   if(here&&arrived!==here&&$("#sheet").hidden){arrived=here;sel=here;buzz([80,60,80]);beep(660,.2)}
   if(!here)arrived=null;
@@ -512,8 +552,9 @@ function chip(){
   else if(G.mode==="demo")b.textContent="Loop hierheen";
   else if(d<150)b.textContent="Gps hapert, ik sta er";
   else b.hidden=true;
+  if(G.grp&&!rare&&!canOpen(sel)){$("#cHint").textContent=lockHint(sel);b.hidden=true}
 }
-$("#cAct").onclick=()=>{if(!sel)return;if(inRange(sel))encounter(sel);else if(G.mode==="demo"){walkTo={x:sel.x,y:sel.y};V.follow=true}else if(dTo(sel)<150){G.force=sel;encounter(sel)}};
+$("#cAct").onclick=()=>{if(!sel||(sel.id==null&&!canOpen(sel)))return;if(inRange(sel))encounter(sel);else if(G.mode==="demo"){walkTo={x:sel.x,y:sel.y};V.follow=true}else if(dTo(sel)<150){G.force=sel;encounter(sel)}};
 let pd=null;
 cv.addEventListener("pointerdown",e=>{pd={x:e.clientX,y:e.clientY,ox:V.follow?P.x:V.ox,oy:V.follow?P.y:V.oy,drag:false};cv.setPointerCapture(e.pointerId)});
 cv.addEventListener("pointermove",e=>{if(!pd)return;const dx=e.clientX-pd.x,dy=e.clientY-pd.y;if(!pd.drag&&Math.hypot(dx,dy)>8)pd.drag=true;if(pd.drag){V.follow=false;V.ox=pd.ox-dx/V.s;V.oy=pd.oy-dy/V.s}});
@@ -639,7 +680,7 @@ const KF={"Ilse Verbrugge":["iemand die een leren map onder de arm klemt","na tw
 "Otto Pruim":["iemand met witte katoenen handschoenen","niemand had het verschil ooit gezien!","In de goot ligt een loep met een barst."],
 "Noor Haverkamp":["iemand die steeds over de schouder kijkt","die handtekening was een formaliteit!","Op de grond ligt een speldje met het gemeentewapen."],
 "Gijs Terlouw":["iemand met smeerolie aan de handen","het gaat allang niet meer om die schutting!","Op de stenen ligt een ventieldopje."]};
-const fragList=()=>{const v=VF[G.c.victim[0]],k=KF[G.c.sus[G.c.killer].name];return[v[0],v[1],"20.45 uur. {V} haalt iets uit de kluis en stopt het in een binnenzak.","21.30 uur. Een buurman ziet {V} de deur uit gaan. Geen jas, wel haast.","22.15 uur. {V} staat te praten met "+k[0]+".","22.50 uur. Stemmen, steeds harder. Iemand roept: "+k[1],"23.20 uur. {V} loopt alleen verder en kijkt steeds achterom.","23.40 uur. Een doffe klap, daarna voetstappen die zich weghaasten. "+k[2]]};
+const fragList=()=>{const v=VF[G.c.victim[0]]||T.vfD,k=KF[G.c.sus[G.c.killer].name]||T.kfD,m=(STORIES[G.story||"c"]||{}).mid;return[v[0],v[1],(m?m[0]:"20.45 uur. {V} haalt iets uit de kluis en stopt het in een binnenzak."),(m?m[1]:"21.30 uur. Een buurman ziet {V} de deur uit gaan. Geen jas, wel haast."),"22.15 uur. {V} staat te praten met "+k[0]+".","22.50 uur. Stemmen, steeds harder. Iemand roept: "+k[1],(m?m[2]:"23.20 uur. {V} loopt alleen verder en kijkt steeds achterom."),"23.40 uur. Een doffe klap, daarna voetstappen die zich weghaasten. "+k[2]]};
 const vn=s=>s.replace(/\{V\}/g,G.c.victim[0]);
 /* ---------- camera: de schaduw in je eigen straat ---------- */
 function encounter(t){
@@ -695,13 +736,14 @@ function reveal(t){
   else{const w=G.c.wit[t.idx];say((INTRO[t.persona]||"")+" "+w.text,t.idx);h=`<div class="clue wit"><em>${esc(t.persona)} · getuige</em>„${esc(INTRO[t.persona]||"Ik kwam hier toevallig langs.")} ${esc(w.text)}”</div><p class="note" style="color:#6a6250">Eén van de vijf getuigen liegt. Deze ook?</p>`}
   if(t.id==null){const n=G.st.filter(x=>x.done).length;h+=`<div class="clue" style="border-color:#6a6250;margin-top:8px"><em>De laatste avond · ${n}/8</em>${esc(vn(fragList()[n-1]))}</div>`}
   $("#mgHint").hidden=true;$("#mgbox").hidden=true;
-  $("#mgOut").innerHTML=h+`<button class="btn" id="mgOk" style="margin-top:12px">Verder</button>`;
-  $("#mgOk").onclick=()=>{closeSheet();sel=null;save();if(G.st.every(s=>s.done))toast("Alle acht sporen binnen. Open je notitieboek.")};
+  $("#mgOut").innerHTML=h+(G.grp&&t.id==null?codeHtml(G.st.indexOf(t)):"")+`<button class="btn" id="mgOk" style="margin-top:12px">Verder</button>`;
+  $("#mgOk").onclick=()=>{closeSheet();sel=null;save();if(G.grp&&!G.st.every(s=>s.done)){if(myLeft()===0)toast(T.gAllMine)}else if(G.st.every(s=>s.done))toast("Alle acht sporen binnen. Open je notitieboek.")};
   save();
 }
 
 /* ---------- notitieboek ---------- */
 function noteSheet(tab){
+  if(tab==="g"&&G.grp)return grpSheet();
   const c=G.c,found=G.st.filter(s=>s.done);
   let body;
   if(tab==="v"){const n=found.length;body=`<p>${esc(c.victim[0])}, ${esc(c.victim[1])}. ${esc(c.victim[2])}</p><div class="eyebrow">De laatste avond · ${n}/8</div><div class="list">`+(fragList().slice(0,n).map(x=>`<div class="clue" style="border-color:#6a6250">${esc(vn(x))}</div>`).join("")||`<p class="note" style="color:#6a6250">Elk spoor dat je vindt, geeft een stuk van de avond terug.</p>`)+`</div>`}
@@ -709,7 +751,7 @@ function noteSheet(tab){
   else{const ev=found.filter(s=>s.kind==="ev"),wi=found.filter(s=>s.kind==="wit");
     body=`<div class="eyebrow">Bewijs ${ev.length}/3 · altijd waar</div><div class="list">`+(ev.map(s=>`<div class="clue"><b>${esc(c.ev[s.idx].title)}</b>${esc(c.ev[s.idx].text)}</div>`).join("")||`<p class="note" style="color:#6a6250">Nog niets gevonden.</p>`)+`</div>
     <div class="eyebrow">Getuigen ${wi.length}/5 · één liegt</div><p class="note" style="color:#6a6250">Tik om te markeren als waar of leugen.</p><div class="list">`+(wi.map(s=>`<button type="button" data-w="${s.idx}" class="clue wit m${G.mw[s.idx]}"><em>${esc(s.persona)}${G.tips.includes(s.idx)?" · spreekt de waarheid (tip)":""}${G.mw[s.idx]===1?" · waar":G.mw[s.idx]===2?" · leugen":""}</em>„${esc(c.wit[s.idx].text)}”</button>`).join("")||`<p class="note" style="color:#6a6250">Nog niemand gesproken.</p>`)+`</div>`}
-  sheet(`<h2>Notitieboek</h2><div class="tabs"><button type="button" data-t="c" aria-selected="${tab==="c"}">Sporen</button><button type="button" data-t="s" aria-selected="${tab==="s"}">Verdachten</button><button type="button" data-t="v" aria-selected="${tab==="v"}">Verhaal</button></div>${body}<button class="btn ghost" style="color:#1b2233;border-color:#c9bfa6" id="shX">Terug naar de kaart</button>`);
+  sheet(`<h2>Notitieboek</h2><div class="tabs"><button type="button" data-t="c" aria-selected="${tab==="c"}">Sporen</button><button type="button" data-t="s" aria-selected="${tab==="s"}">Verdachten</button><button type="button" data-t="v" aria-selected="${tab==="v"}">Verhaal</button>${G.grp?`<button type="button" data-t="g" aria-selected="false">${T.gTab}</button>`:""}</div>${body}${G.grp&&tab==="c"?gotHtml(false):""}<button class="btn ghost" style="color:#1b2233;border-color:#c9bfa6" id="shX">Terug naar de kaart</button>`);
   $("#sheetBody").onclick=e=>{const b=e.target.closest("button");if(!b)return;if(b.dataset.t)noteSheet(b.dataset.t);else if(b.dataset.s){G.ms[b.dataset.s]^=1;noteSheet("s")}else if(b.dataset.w){G.mw[b.dataset.w]=(G.mw[b.dataset.w]+1)%3;noteSheet("c")}else if(b.id==="shX"){closeSheet()}};
 }
 $("#bNote").onclick=()=>noteSheet("c");
@@ -721,7 +763,7 @@ $("#bBook").onclick=bookSheet;
 
 /* ---------- beschuldigen ---------- */
 function accSheet(ps,pw){
-  const c=G.c,left=G.st.filter(s=>!s.done).length,wi=G.st.filter(s=>s.kind==="wit"&&s.done);
+  const c=G.c,left=G.st.filter((s,i)=>!s.done&&!gotI(i)).length,wi=G.st.filter((s,i)=>s.kind==="wit"&&(s.done||gotI(i)));
   sheet(`<h2>Wie heeft het gedaan?</h2>${left?`<p style="color:#a5392c">Je mist nog ${left} ${left===1?"spoor":"sporen"}. Beschuldigen kan, maar je gokt.</p>`:""}
   <div class="grid2">`+c.sus.map((s,i)=>`<button type="button" data-s="${i}" class="sus${ps===i?" pick":""}${G.ms[i]?" out":""}"><b>${esc(s.name)}</b><small>${esc(s.role)}</small></button>`).join("")+`</div>
   <div class="eyebrow">En wie loog? Goed voor een extra ster</div><div class="list">`+(wi.map(s=>`<button type="button" data-w="${s.idx}" class="sus${pw===s.idx?" pick":""}"><b>${esc(s.persona)}</b></button>`).join("")||`<p class="note" style="color:#6a6250">Je sprak nog geen getuigen.</p>`)+`</div>
@@ -731,13 +773,13 @@ function accSheet(ps,pw){
 $("#bAcc").onclick=()=>accSheet(null,null);
 function verdict(ps,pw){
   const c=G.c;G.tries++;
-  if(ps!==c.killer){buzz([200,100,200]);beep(140,.5);save();
+  if(ps!==c.killer){if(G.grp&&G.grp.m==="V")toast(T.gPen);buzz([200,100,200]);beep(140,.5);save();
     sheet(`<div class="eyebrow">Mis</div><h2>${esc(c.sus[ps].name)} heeft een sluitend alibi</h2><p>De echte dader loopt nog rond. Kijk opnieuw naar wie er gelogen kan hebben. Een foute beschuldiging kost je een ster.</p><button class="btn" id="shX">Terug naar de sporen</button>`);
     $("#sheetBody").onclick=e=>{if(e.target.id==="shX")closeSheet()};return}
-  const min=(Date.now()-G.t0)/60000,s2=pw===c.liar,s3=G.tries===1&&min<=G.par,stars=1+(s2?1:0)+(s3?1:0),xp=100+stars*50,before=rank(prof.xp);
+  const min=(Date.now()-G.t0)/60000+(G.grp&&G.grp.m==="V"?5*(G.tries-1):0),s2=pw===c.liar,s3=G.tries===1&&min<=G.par,stars=1+(s2?1:0)+(s3?1:0),xp=100+stars*50,before=rank(prof.xp);
   const t=today(),y=new Date(Date.now()-864e5),ys=y.getFullYear()+"-"+(y.getMonth()+1)+"-"+y.getDate();
   if(G.mode==="gps"){if(prof.last!==t){prof.streak=prof.last===ys?prof.streak+1:1;prof.last=t}prof.solved++}
-  prof.xp+=xp;LS.set("ss_prof",prof);LS.del("ss_game");buzz([100,50,100,50,300]);beep(660,.2);setTimeout(()=>beep(990,.4),200);
+  prof.xp+=xp;logCase(stars,min);LS.set("ss_prof",prof);LS.del("ss_game");buzz([100,50,100,50,300]);beep(660,.2);setTimeout(()=>beep(990,.4),200);
   let cand=63;c.ev.forEach(e=>cand&=e.mask);const names=c.sus.filter((s,i)=>cand>>i&1).map(s=>s.name).join(", ");
   const lp=G.st.find(x=>x.kind==="wit"&&x.idx===c.liar).persona,up=rank(prof.xp)>before;
   sheet(`<div class="eyebrow">Zaak gesloten</div><h2>${esc(c.sus[c.killer].name)} bekent</h2><div class="stars">${"★".repeat(stars)}${"☆".repeat(3-stars)}</div>
@@ -745,9 +787,9 @@ function verdict(ps,pw){
   <p>Het bewijs liet over: ${esc(names)}. De leugenaar was ${esc(lp)}: „${esc(c.wit[c.liar].text)}” Met die leugen eruit past alleen ${esc(c.sus[c.killer].name)}.</p>
   <div class="tags"><i>${Math.round(min)} min</i><i>${(G.dist/1000).toFixed(1).replace(".",",")} km</i><i>${G.rare.filter(q=>q.done).length}/3 schimmen</i><i>+${xp} punten</i>${G.mode==="gps"?`<i>${prof.streak} ${prof.streak===1?"dag":"dagen"} op rij</i>`:""}</div>
   ${up?`<p><b>Bevorderd tot ${RANKS[rank(prof.xp)][1]}.</b></p>`:""}${!s2?`<p class="note" style="color:#6a6250">Ster gemist: de leugenaar aanwijzen.</p>`:""}${!s3?`<p class="note" style="color:#6a6250">Ster gemist: in één keer goed, binnen ${G.par} minuten.</p>`:""}
-  <button class="btn" id="shX">Naar het bureau</button>`);
+  <button type="button" class="btn ghost dk" id="shC">${G.grp?T.gResBtn:T.shBtn}</button><button class="btn" id="shX">Naar het bureau</button>`);
   $("#sheet").dataset.lock="1";
-  $("#sheetBody").onclick=e=>{if(e.target.id==="shX"){delete $("#sheet").dataset.lock;closeSheet();if(watchId!=null){navigator.geolocation.clearWatch(watchId);watchId=null}G=null;home()}};
+  $("#sheetBody").onclick=e=>{if(e.target.id==="shC"){if(G.grp){shareRes(stars,Math.round(min));return}shareCase(G.code||codeOf(G.story||"c",G.par,G.seed),stars,Math.round(min));return}if(e.target.id==="shX"){delete $("#sheet").dataset.lock;closeSheet();if(watchId!=null){navigator.geolocation.clearWatch(watchId);watchId=null}G=null;home()}};
 }
 /* ---------- levende startpagina: een straat in de regen waar je doorheen loopt ---------- */
 const hv=$("#hero"),hx=hv.getContext("2d");let hw=0,hh=0,heroRaf=0,figHit=null,figT0=0;const par={x:0,y:0,tx:0,ty:0};
@@ -814,8 +856,8 @@ function leavePlay(){save();stopWatch();G=null;home()}
 function wipeGame(){LS.del(GK);LS.del(WK);stopWatch();G=null;closeSheet();home();toast(T.wiped)}
 function confirmSheet(title,text,yes,fn){sheet('<h2>'+title+'</h2><p>'+text+'</p><button type="button" class="btn red" id="cfY">'+yes+'</button><button type="button" class="btn ghost dk" id="shX">'+T.cancel+'</button>');
   $("#sheetBody").onclick=e=>{if(e.target.id==="shX")closeSheet();else if(e.target.id==="cfY")fn()}}
-function menuSheet(){sheet('<h2>'+T.menu+'</h2><button type="button" class="btn" id="mBack">'+T.map+'</button><button type="button" class="btn ghost dk" id="mHome">'+T.home+'</button><button type="button" class="btn ghost dk" id="mWipe">'+T.wipeG+'</button>');
-  $("#sheetBody").onclick=e=>{const i=e.target.id;if(i==="mBack")closeSheet();else if(i==="mHome"){closeSheet();leavePlay();toast(T.saved)}else if(i==="mWipe")confirmSheet(T.wipeQ,T.wipeT,T.wipeY,wipeGame)}}
+function menuSheet(){sheet('<h2>'+T.menu+'</h2><button type="button" class="btn" id="mBack">'+T.map+'</button><button type="button" class="btn ghost dk" id="mHome">'+T.home+'</button>'+(G&&G.grp&&!G.grp.free?'<button type="button" class="btn ghost dk" id="mFree">'+T.gFree+'</button>':'')+'<button type="button" class="btn ghost dk" id="mWipe">'+T.wipeG+'</button>');
+  $("#sheetBody").onclick=e=>{const i=e.target.id;if(i==="mBack")closeSheet();else if(i==="mHome"){closeSheet();leavePlay();toast(T.saved)}else if(i==="mFree")confirmSheet(T.gFreeQ,T.gFreeT,T.gFree,()=>{G.grp.free=true;save();closeSheet()});else if(i==="mWipe")confirmSheet(T.wipeQ,T.wipeT,T.wipeY,wipeGame)}}
 function wipeSheet(){const has=!!LS.get(GK,null);sheet('<h2>'+T.wipeH+'</h2>'+(has?'<button type="button" class="btn ghost dk" id="wG">'+T.wipeY+'</button>':'')+'<button type="button" class="btn ghost dk" id="wA">'+T.wipeAll+'</button><button type="button" class="btn" id="shX">'+T.cancel+'</button>');
   $("#sheetBody").onclick=e=>{const i=e.target.id;if(i==="shX")closeSheet();else if(i==="wG")confirmSheet(T.wipeQ,T.wipeT,T.wipeY,wipeGame);
     else if(i==="wA")confirmSheet(T.allQ,T.allT,T.allY,()=>{LS.del(GK);LS.del(WK);LS.del("ss_prof");prof={xp:0,streak:0,last:"",solved:0,book:{}};closeSheet();home();toast(T.wiped)})}}
@@ -828,7 +870,132 @@ function goBack(){
   return false}
 try{history.pushState({ss:1},"");addEventListener("popstate",()=>{if(goBack()){try{history.pushState({ss:1},"")}catch(e){}}})}catch(e){}
 $("#zM").onclick=menuSheet;$("#bBack").onclick=()=>{goBack()};$("#bWipe").onclick=wipeSheet;
-home();
+/* ---------- verhalen, duel via zaakcode, archief ---------- */
+const STORIES={"c": {"n": "Het dorp", "tag": "De klassieke zaak. Twintig dorpsgenoten, en iedereen had wel iets met het slachtoffer."}, "t": {"n": "Het Testament", "tag": "De familie Van Loon is bijeen. Morgen wordt het testament voorgelezen.", "intro": "De familie Van Loon is in de stad voor het voorlezen van het testament, morgenochtend om negen uur.", "mid": ["20.45 uur. {V} legt een verzegelde envelop klaar voor de notaris en draait de la op slot.", "21.30 uur. De familie zit aan tafel. De stoel van {V} blijft leeg.", "23.20 uur. {V} loopt alleen verder, met de sleutel van de la in de hand."], "vic": [["Augusta van Loon", "weduwe en hoofd van de familie", "Ze had het testament vorige week laten herschrijven en niemand verteld wat erin stond.", "19.10 uur. {V} zet zeven naamkaartjes op de eettafel en haalt er één weer weg.", "20.00 uur. {V} belt de notaris en vraagt of er nog één zin bij kan."], ["Leopold van Loon", "reder in ruste", "Hij had de familie bijeengeroepen om te vertellen wie er niets zou krijgen.", "19.10 uur. {V} haalt het familieportret van de schoorsteen en kijkt lang naar één gezicht.", "20.00 uur. {V} schenkt twee glazen in. Het tweede blijft onaangeroerd staan."]], "sus": [["Casper van Loon", "de oudste zoon", "rekent al jaren op het huis aan de gracht", "{V} zei dat het huis naar een stichting ging. Ik had er al een hypotheek op genomen.", "iemand die met een zegelring tegen de lantaarnpaal tikt", "dat huis is van mij, dat weet iedereen!", "Op de stenen ligt een verfrommeld taxatierapport."], ["Isabel van Loon", "de dochter", "hoorde vanmiddag dat ze uit het testament is geschrapt", "Eén ruzie, tien jaar geleden. {V} had het nooit vergeven en liet het me zwart op wit lezen.", "iemand die een parelketting door de vingers laat glijden", "tien jaar, en nog steeds straf je me!", "In de goot ligt een losse parel."], ["Diederik Roest", "de schoonzoon", "leidt het familiebedrijf en heeft de cijfers mooier gemaakt dan ze zijn", "{V} had de echte boeken gezien en wilde het morgen aan tafel vertellen, waar iedereen bij zat.", "iemand die naar dure sigaren ruikt", "niet morgen, niet waar iedereen bij zit!", "Op de stoep ligt een half opgerookte sigaar."], ["Jet Kalis", "de huishoudster", "zorgde twaalf jaar voor {V} en kreeg een legaat beloofd", "Twaalf jaar, dag en nacht. In het nieuwe testament stond mijn naam niet eens.", "iemand die naar boenwas ruikt", "twaalf jaar, en ik sta er niet eens in!", "Op de stenen ligt een zilveren theelepel."], ["Floris van Loon", "de kleinzoon", "leende geld op naam van {V}", "{V} had de brief van de bank gevonden. Ik vroeg om een week. Ik kreeg een uur.", "iemand die steeds op een telefoon kijkt", "geef me een week, één week!", "Op de grond ligt een gokbriefje van de paardenbaan."], ["Rutger Tack", "de familieadvocaat", "beheert al dertig jaar het familiekapitaal", "{V} wilde een accountant laten kijken naar wat ik in dertig jaar had gerekend. Dat had mijn kantoor niet overleefd.", "iemand die een aktetas tegen de borst drukt", "dertig jaar trouw, en nu een accountant?", "Op de stenen ligt een vulpen met een gouden dop."], ["Odette Marchand", "de onbekende nicht", "dook vorige maand op met een geboorteakte", "Die akte is echt. {V} noemde me een oplichter en wilde hem verscheuren.", "iemand die zacht in het Frans vloekt", "ik ben familie, of je het wilt of niet!", "In de goot ligt een treinkaartje uit Parijs."]]}, "v": {"n": "De laatste voorstelling", "tag": "Het Nachttheater speelt vanavond voor het laatst. Niet iedereen haalt het applaus.", "intro": "Het Nachttheater speelt vanavond de laatste voorstelling in deze stad.", "mid": ["20.45 uur. Het doek gaat op. {V} staat in de coulissen en schrijft namen op een lijstje.", "21.30 uur. Pauze. {V} glipt door de artiesteningang naar buiten, het lijstje in de borstzak.", "23.20 uur. Het applaus is tot op straat te horen. {V} loopt de andere kant op."], "vic": [["Maximiliaan Brandt", "regisseur van het Nachttheater", "Hij zou na het applaus bekendmaken wie er niet mee op tournee ging.", "19.10 uur. {V} streept in de kleedkamer twee namen door op de rollenlijst.", "20.00 uur. {V} laat het decor nog één keer verzetten. Niemand zegt iets."], ["Cornelia Duyf", "eigenares van het Nachttheater", "Ze had het gezelschap te koop gezet en het nog aan niemand verteld.", "19.10 uur. {V} telt de kaartverkoop na en doet de kassa eigenhandig op slot.", "20.00 uur. {V} ontvangt een heer met een koffertje in de directiekamer. De deur gaat dicht."]], "sus": [["Lucas Montijn", "de hoofdrolspeler", "hoorde dat {V} zijn rol aan een jongere acteur wil geven", "Twintig jaar heb ik die zaal gevuld. {V} zei dat mijn gezicht geen kaartjes meer verkoopt.", "iemand met een stem die tot de overkant draagt", "twintig jaar heb ik die zaal gevuld!", "Op de stenen ligt een zakdoek vol schmink."], ["Elin Sorgdrager", "de invalster", "kent elke rol uit het hoofd en stond nog nooit op het toneel", "{V} had mij de première beloofd. Vanavond hoorde ik dat die belofte aan drie anderen was gedaan.", "iemand die halve zinnen uit het stuk fluistert", "je had het me beloofd!", "In de goot ligt een tekstboek vol onderstrepingen."], ["Benno Kwast", "de decorbouwer", "kreeg van {V} de schuld van een gevallen lichtbrug", "Ik had gewaarschuwd, op papier. {V} schreef in het rapport dat het mijn schuld was.", "iemand die naar zaagsel en lijm ruikt", "ik had je gewaarschuwd, zwart op wit!", "Op de stoep ligt een duimstok."], ["Philine Aarts", "de kostuumontwerpster", "wacht al maanden op haar geld van {V}", "Ik had de stoffen zelf voorgeschoten. {V} lachte en zei dat kunst geen facturen kent.", "iemand met een meetlint om de nek", "kunst kent wél facturen!", "In het gras ligt een speldenkussen."], ["Tibbe Zeeman", "de toneelschrijver", "schreef het stuk en zag zijn naam van het affiche verdwijnen", "Mijn stuk, woord voor woord. {V} had er een andere naam boven laten zetten.", "iemand met een stapel losse vellen onder de arm", "elk woord daarvan is van mij!", "Op de stenen ligt een bladzijde met doorgehaalde regels."], ["Marlous Peereboom", "de zakelijk leider", "tekende de leningen voor de tournee", "Het gezelschap was failliet en {V} wist dat. Mijn huis stond als onderpand.", "iemand die hardop bedragen optelt", "mijn huis staat op het spel, begrijp je dat?", "Op de grond ligt een telstrook waar geen eind aan komt."], ["Sacha Wind", "de souffleur", "hoort in het donker alles wat er achter het doek wordt gezegd", "Ik wist van de brandverzekering op het theater. {V} bood geld voor mijn stilte en nam het een dag later terug.", "iemand die alleen fluisterend praat", "ik fluister het de hele stad rond als het moet!", "In de goot ligt een zaklampje dat nog brandt."]]}, "k": {"n": "Kermisnacht", "tag": "De laatste avond van de kermis. Om middernacht gaan de lichten uit.", "intro": "De kermis staat voor de laatste avond in de stad.", "mid": ["20.45 uur. {V} loopt de kramen langs met een geldkistje en een boekje.", "21.30 uur. De lichtjes van het reuzenrad vallen uit. {V} loopt weg van het terrein, het kistje onder de arm.", "23.20 uur. De muziek van de draaimolen stopt. {V} staat alleen onder een lantaarn te tellen."], "vic": [["Arend Molenkamp", "kermisbaas", "Hij verdeelde de standplaatsen en vergat nooit wie hem had tegengesproken.", "19.10 uur. {V} loopt met een plattegrond over het terrein en zet een kruis door twee kramen.", "20.00 uur. {V} staat lang onder het reuzenrad omhoog te kijken."], ["Dora Molenkamp", "eigenares van de kermis", "Ze wilde de kermis na dit seizoen verkopen en had het nog niemand verteld.", "19.10 uur. {V} hangt in de woonwagen een bord op: morgen 8 uur, iedereen aanwezig.", "20.00 uur. Door het raam van de woonwagen krijgt {V} een envelop aangereikt. {V} geeft hem ongeopend terug."]], "sus": [["Sil Reuvers", "de botsautobaas", "staat al drie jaar op de slechtste plek van het terrein", "Drie jaar achter de toiletwagens. {V} zei dat ik dankbaar mocht zijn dat ik er nog stond.", "iemand met een rammelende zak muntjes", "drie jaar achteraan, en nu dit!", "Op de stenen ligt een botsautomuntje."], ["Mona Lisse", "de waarzegster", "voorspelde een ongeluk en kreeg van {V} de schuld toen het gebeurde", "{V} vertelde iedereen dat ik de kermis ongeluk bracht. Er kwam niemand meer mijn tent in.", "iemand met armbanden die bij elke stap rinkelen", "ik zag dit aankomen, en jij ook!", "In de goot ligt een tarotkaart: de Toren."], ["Jochem Vink", "de monteur van het reuzenrad", "tekende keuringspapieren die niet kloppen", "{V} liet mij tekenen voor een as die al jaren versleten is. Als het misging, stond alleen mijn naam eronder.", "iemand met een gereedschapstas over de schouder", "mijn naam staat eronder, niet de jouwe!", "Op de stoep ligt een moer zo groot als een vuist."], ["Bibi Kokkel", "de suikerspinverkoopster", "leende geld van {V} voor een nieuwe kraam", "Elke week kwam {V} de helft van mijn kas halen. Deze week wilde {V} de hele kas.", "iemand die naar gebrande suiker ruikt", "de helft was de afspraak, de helft!", "In het gras ligt een roze suikerspinstokje."], ["Hugo Starre", "de sterke man", "stond twintig jaar op het affiche en is er door {V} afgehaald", "{V} zei dat niemand nog betaalt om een oude man een staaf te zien buigen.", "iemand met een nek zo breed als een deurpost", "ik heb deze kermis gedragen!", "Op de stenen ligt een kromgebogen hoefijzer."], ["Ravi Blaauw", "de schiettentbaas", "zag {V} de kas tellen met twee boekjes", "Ik vroeg mijn deel, voor het zwijgen. {V} dreigde mijn vergunning in te leveren bij de gemeente.", "iemand met een pluchen beer onder de arm", "twee boekjes, ik heb ze allebei gezien!", "In de goot ligt een kurk uit een kermisgeweer."], ["Nel Oudshoorn", "de kassière", "telt al dertig jaar het geld van {V}", "Er ontbrak geld en {V} wees naar mij. Na dertig jaar. Ik had nog nooit een cent te veel gepakt.", "iemand met een rol kaartjes om de pols", "dertig jaar, en je noemt me een dief!", "Op de grond ligt een afgescheurd toegangskaartje."]]}},SID=["c","t","v","k"];
+Object.assign(T,{"stEy": "Kies je verhaal", "bCode": "Zaakcode invoeren", "bArch": "Archief", "dEy": "Duel", "dH": "Speel dezelfde zaak", "dT": "Elke zaak heeft een code. Voer de code van een ander in en je krijgt dezelfde verdachten, hetzelfde bewijs en dezelfde leugenaar, op plekken in je eigen buurt. Wie lost hem het snelst op?", "dGo": "Start deze zaak", "dBad": "Die zaakcode bestaat niet. Controleer hem en probeer het opnieuw.", "shBtn": "Daag iemand uit met deze zaak", "shTxt": "Moordwandeling: ik loste zaak {c} op met {s} in {m} minuten. Dezelfde zaak, jouw eigen straten. Ben jij sneller?", "copied": "Uitdaging gekopieerd.", "copyP": "Kopieer deze uitdaging:", "aH": "Archief", "aMed": "Medailles per verhaal", "aSolved": "opgelost", "aLast": "Laatste zaken", "aNone": "Nog geen zaak opgelost. Je eerste komt hier te staan.", "aTip": "Tik op een zaak om hem opnieuw te spelen of de code door te geven.", "close": "Sluiten", "dec": ",", "pH": "Meer verhalen, elke dag een zaak", "pT": "Met Pro speel je elke dag de zaak van vandaag en zoveel extra zaken als je wilt, overal waar je bent. Je krijgt er drie verhalen bij, elk met eigen verdachten en slachtoffers: Het Testament, De laatste voorstelling en Kermisnacht. Je betaalt één keer via Ko-fi en krijgt daar een code. Vul die hieronder in.", "vfD": ["19.10 uur. {V} doet de gordijnen dicht, vroeger dan anders.", "20.00 uur. {V} krijgt een telefoontje en zegt bijna niets terug."], "kfD": ["iemand die het gezicht van de lantaarn wegdraait", "dit laat ik niet gebeuren!", "Op de stenen blijft alleen een natte voetstap achter."]});Object.assign(VF,{"Barend Slootweg": ["19.10 uur. {V} plakt een kavelnummer op een kist en schrijft er geen naam bij.", "20.00 uur. {V} krijgt een bod aan de deur en slaat het af zonder de envelop te openen."], "Margriet van Hasselt": ["19.10 uur. {V} bladert door een oud adresboekje en zet een kruisje bij drie namen.", "20.00 uur. {V} schrijft een brief, leest hem over en steekt hem zonder postzegel in de zak."], "Evert Koning": ["19.10 uur. {V} stopt zes huurverhogingen in zes enveloppen.", "20.00 uur. Er wordt aangebeld bij {V}. De deur blijft dicht en het licht gaat uit."], "Lidewij Storm": ["19.10 uur. {V} sluit de apotheek af en neemt één receptenboek mee naar huis.", "20.00 uur. {V} draait een nummer, hangt op en draait het opnieuw."], "Joris Hagedoorn": ["19.10 uur. {V} haalt de sleutel van de clubkas van de bos en steekt hem apart in de borstzak.", "20.00 uur. In de kantine ligt een briefje voor {V}. {V} leest het en scheurt het in vieren."], "Philippa de Ruyter": ["19.10 uur. {V} legt een ring in de etalage die daar vanochtend nog niet lag.", "20.00 uur. Iemand staat lang voor de etalage van {V} en loopt door zonder aan te bellen."], "Maarten Schuurman": ["19.10 uur. {V} haalt één dossier uit de la en legt het boven op de stapel.", "20.00 uur. {V} belt een oud-leerling. Het gesprek duurt nog geen minuut."], "Greetje Valk": ["19.10 uur. {V} spreidt de pachtcontracten uit op tafel en legt er twee apart.", "20.00 uur. Een trekker rijdt stapvoets langs het huis van {V} en keert aan het eind van de weg."]});Object.assign(KF,{"Liesbeth Kramer": ["iemand met meel op de mouwen", "drie generaties, en jij veegt het weg!", "Op de stoep ligt een gescheurde broodzak."], "Jurre van Dam": ["iemand die met een bos gelabelde sleutels speelt", "dat geld is er niet meer!", "In de goot ligt een visitekaartje met een natte hoek."], "Annemiek Bos": ["iemand met een dokterstas in de hand", "trek het in, dan praten we verder!", "Op de grond ligt een leeg receptbriefje."], "Daan Schippers": ["iemand die naar teer en diesel ruikt", "dan lig ik zelf aan de ketting!", "Op de stenen ligt een stuk geteerd touw."], "Roos Winter": ["iemand met een snoeischaar aan de riem", "die winkel pak je me niet af!", "In de goot ligt een geknakte witte lelie."], "Klaas Hoekstra": ["iemand met inktvlekken op de vingers", "zestien jaar, en dit is mijn dank?", "Op de grond ligt een kassabon vol potloodstrepen."], "Vera Zwart": ["iemand die naar haarlak ruikt", "één brief, en alles ging dicht!", "Op de stoep ligt een kam met een afgebroken tand."], "Bram Doornbos": ["iemand met aarde onder de nagels", "dat heb ik niet verdiend!", "In het gras ligt een rol binddraad."], "Hanna Brouwer": ["iemand met krijt aan de vingers", "achter mijn rug, na al die jaren!", "Op de stenen ligt een rode pen zonder dop."], "Sjoerd Postma": ["iemand met een pieper aan de riem", "het houdt een keer op!", "Op straat ligt een losse uniformknoop."]});
+SID.forEach(id=>{const s=STORIES[id];if(!s.sus)return;s.pool=s.sus.map(x=>[x[0],x[1]]);s.sus.forEach(x=>{MOT[x[0]]=[[x[2],x[3]]];KF[x[0]]=[x[4],x[5],x[6]]});s.vic.forEach(x=>{VF[x[0]]=[x[3],x[4]]})});
+let NEXT=LS.get("ss_story","c"),RUN="c";if(!STORIES[NEXT])NEXT="c";
+const HZ=(location.hash||"").match(/z=([A-Za-z0-9-]+)/);
+function canStory(id){return id==="c"||isPro()}
+function pickS(){return canStory(NEXT)?NEXT:"c"}
+function codeOf(sid,par,seed){return sid.toUpperCase()+(par<=45?"S":"L")+"-"+(seed>>>0).toString(36).toUpperCase()}
+function parseCode(v){const c=proNorm(v);if(c.length<3||c.length>9)return null;const sid=c[0].toLowerCase(),seed=parseInt(c.slice(2),36);
+  if(!STORIES[sid]||!/[SL]/.test(c[1])||!(seed>=0)||seed>4294967295)return null;return{sid,short:c[1]==="S",seed}}
+function setLen(short){const b=document.querySelectorAll("#len button")[short?0:1];if(b)b.click()}
+function storyUI(){
+  if(!canStory(NEXT))NEXT="c";const b=prof.best||{};
+  $("#stories").innerHTML=SID.map(id=>'<button type="button" data-id="'+id+'" aria-pressed="'+(id===NEXT)+'">'+(canStory(id)?"":"🔒 ")+esc(STORIES[id].n)+(b[id]?" "+"★".repeat(b[id]):"")+'</button>').join("");
+  $("#stTag").textContent=STORIES[NEXT].tag}
+$("#stories").onclick=e=>{const b=e.target.closest("button");if(!b)return;const id=b.dataset.id;if(!canStory(id)){proSheet();return}NEXT=id;LS.set("ss_story",id);storyUI()};
+$("#bGps").onclick=()=>{if(locked())return proSheet();GRP=null;RUN=pickS();startGps(hashStr(today()))};
+$("#bRandom").onclick=()=>{if(locked())return proSheet();GRP=null;RUN=pickS();startGps(Math.floor(Math.random()*4e9))};
+$("#bDemo").onclick=()=>{GRP=null;RUN=pickS();const w=demoWorld();build(Math.floor(Math.random()*4e9),"demo",w.pois,w.ways,null)};
+function codeSheet(pre){
+  sheet('<div class="eyebrow">'+T.dEy+'</div><h2>'+T.dH+'</h2><p>'+T.dT+'</p><input class="inp" id="dCode" autocomplete="off" autocapitalize="characters" spellcheck="false" aria-label="'+T.bCode+'" value="'+esc(pre||"")+'"><button type="button" class="btn" id="dOk">'+T.dGo+'</button><p class="note" id="dMsg" style="color:#a5392c"></p><button type="button" class="btn ghost dk" id="shX">'+T.cancel+'</button>');
+  const go=()=>{const gm=/g=([A-Za-z0-9.%~_!'()*-]+)/.exec($("#dCode").value);if(gm){grpOpen(gm[1]);return}const p=parseCode($("#dCode").value);if(!p){$("#dMsg").textContent=T.dBad;buzz(120);return}if(locked()||!canStory(p.sid)){proSheet();return}closeSheet();setLen(p.short);GRP=null;RUN=p.sid;startGps(p.seed)};
+  $("#sheetBody").onclick=e=>{if(e.target.id==="shX")closeSheet();else if(e.target.id==="dOk")go()};
+  $("#dCode").onkeydown=e=>{if(e.key==="Enter")go()}}
+$("#bCode").onclick=()=>codeSheet("");
+function shareCase(code,stars,min){
+  const url=location.origin+location.pathname+"#z="+code,txt=T.shTxt.replace("{c}",code).replace("{s}","★".repeat(stars)).replace("{m}",min),all=txt+" "+url;
+  if(navigator.share){navigator.share({text:txt,url:url}).catch(()=>{});return}
+  try{navigator.clipboard.writeText(all).then(()=>toast(T.copied),()=>prompt(T.copyP,all))}catch(e){prompt(T.copyP,all)}}
+function logCase(stars,min){
+  if(G.mode!=="gps")return;const sid=STORIES[G.story]?G.story:"c";
+  prof.best=prof.best||{};prof.cnt=prof.cnt||{};prof.log=prof.log||[];
+  prof.best[sid]=Math.max(prof.best[sid]||0,stars);prof.cnt[sid]=(prof.cnt[sid]||0)+1;
+  prof.log.unshift({d:today(),s:sid,c:G.code||codeOf(sid,G.par,G.seed),st:stars,m:Math.round(min),km:Math.round(G.dist/100)/10,v:G.c.victim[0]});
+  if(prof.log.length>40)prof.log.length=40}
+function archSheet(){
+  const log=prof.log||[],b=prof.best||{},n=prof.cnt||{},st=k=>"★".repeat(k||0)+"☆".repeat(3-(k||0));
+  sheet('<h2>'+T.aH+'</h2><div class="eyebrow">'+T.aMed+'</div><div class="book" style="grid-template-columns:1fr 1fr">'+SID.map(id=>'<div'+(n[id]?'':' class="no"')+'><b>'+esc(STORIES[id].n)+'</b><span class="r3">'+st(b[id])+'</span><span>'+(n[id]||0)+' '+T.aSolved+'</span></div>').join("")+'</div><div class="eyebrow">'+T.aLast+'</div><div class="list">'+
+    (log.map(x=>'<button type="button" class="sus" data-c="'+esc(x.c)+'"><b>'+esc(x.v)+'</b><small>'+esc((STORIES[x.s]||STORIES.c).n)+' · '+esc(String(x.d).split("-").reverse().join("-"))+' · '+x.m+' min · '+String(x.km).replace(".",T.dec)+' km</small><div class="tags"><i>'+st(x.st)+'</i><i>'+esc(x.c)+'</i></div></button>').join("")||'<p class="note" style="color:#6a6250">'+T.aNone+'</p>')+
+    '</div>'+(log.length?'<p class="note" style="color:#6a6250">'+T.aTip+'</p>':'')+'<button type="button" class="btn ghost dk" id="shX">'+T.close+'</button>');
+  $("#sheetBody").onclick=e=>{if(e.target.id==="shX"){closeSheet();return}const r=e.target.closest("[data-c]");if(r)codeSheet(r.dataset.c)}}
+$("#bArch").onclick=archSheet;
+
+/* ---------- groepsspel zonder server: samen of teams tegen elkaar ---------- */
+Object.assign(T,{"bGrp": "Groepszaak", "gH": "Eén zaak, meerdere telefoons", "gT": "Jij maakt de zaak aan op deze plek en stuurt de link naar de rest. Iedereen krijgt dezelfde zaak op dezelfde plekken. Elke speler heeft Pro nodig.", "gMode": "Speelvorm", "gModeS": "Samen", "gModeV": "Teams tegen elkaar", "gCnt": "Aantal spelers", "gPls": "spelers", "gYou": "Jij bent", "gYouS": "jij", "gPl": "Speler", "gTeam": "Team", "gOf": "van", "gWe": "onze groep", "gMake": "Maak de zaak aan", "gJoinH": "Je bent uitgenodigd", "gJoin": "Doe mee", "gInv": "Stuur de uitnodiging", "gInvTxt": "Moordwandeling: doe mee met onze groepszaak. Open deze link op je telefoon en kies je plek in de groep.", "gCopied": "Gekopieerd.", "gBadL": "Die uitnodiging klopt niet. Vraag de link opnieuw.", "gFar": "Je staat ver van de startplek van deze groep. De sporen liggen daar.", "gRuleS": "De acht sporen zijn verdeeld. Jij kunt alleen je eigen sporen openen. Geef de spoorcodes aan elkaar door, dan lossen jullie de zaak samen op.", "gRuleV": "Elk team heeft vier sporen. Ruil spoorcodes met het andere team, eerlijk of niet: je mag een vals spoor geven. Vertrouw je het niet, dan loop je hun sporen zelf na zodra je eigen vier binnen zijn. Een foute beschuldiging kost vijf minuten.", "gLockS": "Dit spoor is van speler {n}. Vraag om de spoorcode.", "gLockV": "Dit spoor is van team {n}. Ruil ervoor, of loop eerst je eigen sporen af.", "gRadar": "Jouw sporen zijn binnen. Wissel codes uit met de rest.", "gAllMine": "Jouw sporen zijn binnen. Open je notitieboek, tabblad Groep.", "gCodeEy": "Spoorcode voor je groep", "gCodeV": "Delen met het andere team doe je in je notitieboek, tabblad Groep: echt of vals.", "gTab": "Groep", "gIn": "Spoorcode invoeren", "gAdd": "Voeg toe", "gBadC": "Die spoorcode hoort niet bij deze zaak.", "gOwn": "Dat spoor heb je zelf al gevonden.", "gAdded": "Spoor toegevoegd.", "gGot": "Gekregen sporen", "gNoGot": "Nog niets gekregen.", "gTap": "Tik op een gekregen spoor om het te markeren als waar of leugen.", "gMay": "kan vals zijn", "gOkC": "nagelopen, klopt", "gLieC": "nagelopen, dit was vals", "gTrue": "waar", "gLie": "leugen", "gMine": "Jouw sporen om te delen", "gNoMine": "Nog geen spoor gevonden.", "gShare": "Deel dit spoor", "gFake": "Maak vals spoor", "gFakeH": "Vals spoor", "gFakeT": "Wie deze code invoert, krijgt dit te zien. Het is niet van echt te onderscheiden.", "gFakeS": "Deel het valse spoor", "gFakeN": "Andere leugen", "gBackG": "Terug naar Groep", "gMsg": "Moordwandeling, spoor bij {p}: code {c}", "gAll": "Alle acht sporen", "gStOpen": "nog open", "gStDone": "gevonden", "gStGot": "gekregen", "gFree": "Alle sporen vrijgeven", "gFreeQ": "Alle sporen vrijgeven?", "gFreeT": "Is er iemand gestopt? Dan kun jij vanaf nu elk spoor zelf openen.", "gBack": "Terug naar het notitieboek", "gResBtn": "Deel jullie uitslag", "gRes": "Moordwandeling, zaak {c}: {w} loste hem op in {m} minuten met {s}, klaar om {t}.", "gPen": "Fout. Vijf minuten straftijd.", "alibi": "{N} zat de hele avond bij mij. Die heeft het niet gedaan."});
+Object.assign(T,{"gT": "Jij maakt de zaak aan op deze plek en stuurt de link naar de rest. Iedereen krijgt dezelfde zaak op dezelfde plekken. De anderen doen gratis mee, met maximaal 10 telefoons.", "gPair": "je deelt de sporen van speler {n}", "gpH": "Speel met een groep", "gpT": "Met een groepspas maak je {u} uur lang groepszaken aan, voor maximaal {n} telefoons. Alleen jij hebt de pas nodig. De rest doet gratis mee via je uitnodiging. Je koopt de pas via Ko-fi en krijgt daar een code. De {u} uur gaan in zodra je de code hieronder invoert.", "gpBtn": "Koop een groepspas", "gpOn": "Groepspas actief, nog {h} uur.", "gpOk": "Groepspas actief. Je hebt {u} uur.", "pExp": "Die code is verlopen of ingetrokken.", "pUsedC": "Die groepscode is op dit toestel al gebruikt.", "pWait": "De codes worden opgehaald…", "pNoNet": "De codes konden niet worden opgehaald. Controleer je verbinding en probeer het opnieuw."});
+let GRP=null;
+const HG=(location.hash||"").match(/g=([A-Za-z0-9.%~_!'()*-]+)/),B32="ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+const b36=(n,w)=>Math.round(n).toString(36).padStart(w,"0");
+function gotI(i){return !!(G&&G.grp&&G.grp.got[i]!=null)}
+function myLeft(){const g=G.grp;return G.st.filter((s,i)=>g.own[i]===g.me&&!s.done).length}
+function canOpen(s){const g=G&&G.grp;if(!g||g.free)return true;const i=G.st.indexOf(s);if(i<0||g.own[i]===g.me)return true;return g.m==="V"&&myLeft()===0}
+function ownTag(i){const g=G.grp;return g.m==="V"?T.gTeam+" "+"AB"[g.own[i]]:T.gPl+" "+(g.own[i]+1)}
+function lockHint(s){const g=G.grp,i=G.st.indexOf(s);return(g.m==="V"?T.gLockV:T.gLockS).replace("{n}",g.m==="V"?"AB"[g.own[i]]:g.own[i]+1)}
+function mkGrp(seed){const p=shuffle([0,1,2,3,4,5,6,7],rngOf(seed^0x2545f491)),own=[];const k=Math.min(GRP.n,8);p.forEach((i,j)=>own[i]=j%k);return{m:GRP.m,n:GRP.n,me:GRP.me%k,ph:GRP.me,own,got:{},tm:{},free:false}}
+function meTxt(){const g=G.grp;return g.m==="V"?T.gModeV+" · "+T.gTeam.toLowerCase()+" "+"AB"[g.me]:T.gModeS+" · "+T.gPl.toLowerCase()+" "+((g.ph==null?g.me:g.ph)+1)+" "+T.gOf+" "+g.n+(g.ph>=8?" · "+T.gPair.replace("{n}",g.me+1):"")}
+function glink(){const g=G.grp,o=G.origin;return location.origin+location.pathname+"#g="+[(G.story||"c")+(G.par<=45?"s":"l")+g.m.toLowerCase()+g.n.toString(36),(G.seed>>>0).toString(36),b36(o.lat*1e5+9e6,5),b36(o.lon*1e5+18e6,5),G.st.map(s=>b36(s.x+3000,3)+b36(s.y+3000,3)+b36(PRI.indexOf(s.type),1)).join(""),encodeURIComponent(G.st.map(s=>(s.nm||"").replace(/[~.]/g," ")).join("~"))].join(".")}
+function parseG(v){
+  const p=String(v).split(".");if((p.length!==5&&p.length!==6)||p[4].length!==56||p[0].length!==4)return null;
+  const h=p[0].toLowerCase(),sid=h[0],n=parseInt(h[3],36);if(!STORIES[sid]||!/[sl]/.test(h[1])||!/[sv]/.test(h[2])||!(n>=2&&n<=10))return null;
+  const seed=parseInt(p[1],36),lat=(parseInt(p[2],36)-9e6)/1e5,lon=(parseInt(p[3],36)-18e6)/1e5;if(!(seed>=0)||seed>4294967295||!(Math.abs(lat)<=90)||!(Math.abs(lon)<=180))return null;
+  const st=[];for(let i=0;i<8;i++){const q=p[4].substr(i*7,7),ty=PRI[parseInt(q[6],36)],x=parseInt(q.substr(0,3),36)-3000,y=parseInt(q.substr(3,3),36)-3000;if(!ty||!(Math.abs(x)<=3000)||!(Math.abs(y)<=3000))return null;st.push({x,y,type:ty})}
+  if(p[5]){try{decodeURIComponent(p[5]).split("~").forEach((nm,i)=>{if(st[i])st[i].name=nm.slice(0,40)})}catch(e){}}
+  return{sid,short:h[1]==="s",m:h[2].toUpperCase(),n:h[2]==="v"?2:n,seed,o:[lat,lon],st}}
+function shareTxt(txt,url){const all=url?txt+" "+url:txt;
+  if(navigator.share){navigator.share(url?{text:txt,url:url}:{text:txt}).catch(()=>{});return}
+  try{navigator.clipboard.writeText(all).then(()=>toast(T.gCopied),()=>prompt(T.copyP,all))}catch(e){prompt(T.copyP,all)}}
+function invite(){if(G&&G.grp&&G.origin)shareTxt(T.gInvTxt,glink())}
+function grpBrief(){const b=$("#bInv");b.hidden=!(G.grp&&G.origin);if(!G.grp)return;
+  $("#bfNo").textContent+=" · "+meTxt();$("#bfText").textContent+=" "+(G.grp.m==="V"?T.gRuleV:T.gRuleS)}
+$("#bInv").onclick=invite;
+/* spoorcodes: drie tekens, echt en vals zien er hetzelfde uit */
+function clueCode(i,v){const k=hashStr("k"+G.seed)%64,x=((i*8+v)*37+k)%64,n=x*512+hashStr(G.seed+"|"+x)%512;return B32[n>>10]+B32[n>>5&31]+B32[n&31]}
+function readCode(s){const c=String(s||"").toUpperCase().replace(/[^A-Z0-9]/g,"");if(c.length!==3)return null;let n=0;for(const ch of c){const j=B32.indexOf(ch);if(j<0)return null;n=n*32+j}
+  const x=n>>9,k=hashStr("k"+G.seed)%64;if(hashStr(G.seed+"|"+x)%512!==(n&511))return null;const q=((x-k+64)*45)%64,i=q>>3,v=q&7;return clueOf(i,v)?{i,v}:null}
+function clueOf(i,v){const s=G.st[i],c=G.c;if(!s)return null;
+  if(s.kind==="ev"){const e=c.ev[s.idx];if(!v)return{t:e.title,x:e.text};const o=TR[e.trait].filter(q=>q!==e.val)[v-1];if(!o)return null;const z=evText(e.trait,o);return{t:z[0],x:z[1]}}
+  const w=c.wit[s.idx];if(!v)return{t:s.persona,x:w.text};let x;
+  if(v<7)x=T.alibi.replace("{N}",c.sus[v-1].name);else{const ks=Object.keys(TR),h=hashStr(G.seed+"f"+i),t=ks[h%ks.length];x=witText(t,TR[t][(h>>>8)%TR[t].length])}
+  return x===w.text?null:{t:s.persona,x}}
+function fakeV(i){const o=[];for(let v=1;v<8;v++)if(clueOf(i,v))o.push(v);if(!o.length)return 0;if(o.includes(7)&&Math.random()<.4)return 7;return o[Math.floor(Math.random()*o.length)]}
+function codeHtml(i){return G.grp.m==="V"?'<p class="note" style="color:#6a6250;margin-top:8px">'+T.gCodeV+'</p>':'<div class="clue" style="border-style:dashed;margin-top:8px"><em>'+T.gCodeEy+'</em><b style="font-size:26px;letter-spacing:.18em">'+clueCode(i,0)+'</b></div>'}
+function gotCard(i,tap){const g=G.grp,s=G.st[i],q=clueOf(i,g.got[i]),V2=g.m==="V",chk=s.done?(g.got[i]?T.gLieC:T.gOkC):V2?T.gMay:"",m=g.tm[i]||0;
+  return'<'+(tap?'button type="button" data-g="'+i+'"':'div')+' class="clue'+(s.kind==="wit"?" wit":"")+' m'+m+'"><em>'+esc(s.name)+(s.kind==="wit"?" · "+esc(q.t):"")+(chk?" · "+chk:"")+(m===1?" · "+T.gTrue:m===2?" · "+T.gLie:"")+'</em>'+(s.kind==="ev"?'<b>'+esc(q.t)+'</b>'+esc(q.x):"„"+esc(q.x)+"”")+'</'+(tap?'button':'div')+'>'}
+function gotHtml(tap){const ks=Object.keys(G.grp.got).map(Number).sort((a,b)=>a-b);
+  return'<div class="eyebrow">'+T.gGot+' · '+ks.length+'</div><div class="list">'+(ks.map(i=>gotCard(i,tap)).join("")||'<p class="note" style="color:#6a6250">'+T.gNoGot+'</p>')+'</div>'}
+function grpSheet(msg){
+  const g=G.grp,V2=g.m==="V",done=G.st.map((s,i)=>i).filter(i=>G.st[i].done);
+  sheet('<h2>'+T.gTab+'</h2><p><b>'+esc(meTxt())+'.</b> '+(V2?T.gRuleV:T.gRuleS)+'</p>'+
+    '<div class="eyebrow">'+T.gIn+'</div><input class="inp" id="gIn" maxlength="3" autocomplete="off" autocapitalize="characters" spellcheck="false" aria-label="'+T.gIn+'"><button type="button" class="btn" id="gAdd">'+T.gAdd+'</button><p class="note" id="gMsg" style="color:#a5392c">'+(msg||"")+'</p>'+
+    gotHtml(true)+(Object.keys(g.got).length?'<p class="note" style="color:#6a6250">'+T.gTap+'</p>':'')+
+    '<div class="eyebrow">'+T.gMine+'</div><div class="list">'+(done.map(i=>{const s=G.st[i],q=clueOf(i,0);return'<div class="clue'+(s.kind==="wit"?" wit":"")+'"><em>'+esc(s.name)+(s.kind==="wit"?" · "+esc(q.t):"")+'</em>'+(s.kind==="ev"?'<b>'+esc(q.t)+'</b>'+esc(q.x):"„"+esc(q.x)+"”")+'<b style="font-size:22px;letter-spacing:.18em;margin-top:6px">'+clueCode(i,0)+'</b><div class="grid2" style="margin-top:6px"><button type="button" class="btn ghost dk sm" data-sh="'+i+'">'+T.gShare+'</button>'+(V2?'<button type="button" class="btn ghost dk sm" data-fk="'+i+'">'+T.gFake+'</button>':'')+'</div></div>'}).join("")||'<p class="note" style="color:#6a6250">'+T.gNoMine+'</p>')+'</div>'+
+    '<div class="eyebrow">'+T.gAll+'</div><div class="list">'+G.st.map((s,i)=>'<div class="sus"><b>'+esc(s.name)+'</b><small>'+esc(ownTag(i))+(g.own[i]===g.me?" ("+T.gYouS+")":"")+' · '+(s.done?T.gStDone:gotI(i)?T.gStGot:T.gStOpen)+'</small></div>').join("")+'</div>'+
+    (G.origin?'<button type="button" class="btn ghost dk" id="gInv">'+T.gInv+'</button>':'')+'<button type="button" class="btn" id="gBack">'+T.gBack+'</button>');
+  const add=()=>{const r=readCode($("#gIn").value);if(!r){$("#gMsg").textContent=T.gBadC;buzz(120);return}if(G.st[r.i].done){$("#gMsg").textContent=T.gOwn;return}g.got[r.i]=r.v;save();beep(660,.2);grpSheet();toast(T.gAdded)};
+  $("#sheetBody").onclick=e=>{const b=e.target.closest("button");if(!b)return;
+    if(b.id==="gBack")noteSheet("c");else if(b.id==="gAdd")add();else if(b.id==="gInv")invite();
+    else if(b.dataset.g){g.tm[b.dataset.g]=((g.tm[b.dataset.g]||0)+1)%3;save();const y=$("#sheetBody").scrollTop;grpSheet();$("#sheetBody").scrollTop=y}
+    else if(b.dataset.sh)shareTxt(T.gMsg.replace("{p}",G.st[b.dataset.sh].name).replace("{c}",clueCode(+b.dataset.sh,0)));
+    else if(b.dataset.fk)fakeSheet(+b.dataset.fk)};
+  $("#gIn").onkeydown=e=>{if(e.key==="Enter")add()}}
+function fakeSheet(i){const v=fakeV(i);if(!v)return grpSheet();const q=clueOf(i,v),s=G.st[i],code=clueCode(i,v);
+  sheet('<div class="eyebrow">'+esc(s.name)+'</div><h2>'+T.gFakeH+'</h2><p>'+T.gFakeT+'</p><div class="clue'+(s.kind==="wit"?" wit":"")+'"><em>'+esc(s.name)+(s.kind==="wit"?" · "+esc(q.t):"")+'</em>'+(s.kind==="ev"?'<b>'+esc(q.t)+'</b>'+esc(q.x):"„"+esc(q.x)+"”")+'<b style="font-size:26px;letter-spacing:.18em;margin-top:6px">'+code+'</b></div><button type="button" class="btn" id="fkS">'+T.gFakeS+'</button><button type="button" class="btn ghost dk" id="fkN">'+T.gFakeN+'</button><button type="button" class="btn ghost dk" id="gBack">'+T.gBackG+'</button>');
+  $("#sheetBody").onclick=e=>{const b=e.target.id;if(b==="gBack")grpSheet();else if(b==="fkN")fakeSheet(i);else if(b==="fkS")shareTxt(T.gMsg.replace("{p}",s.name).replace("{c}",code))}}
+function shareRes(stars,min){const g=G.grp,d=new Date();shareTxt(T.gRes.replace("{c}",G.code).replace("{w}",g.m==="V"?T.gTeam+" "+"AB"[g.me]:T.gWe).replace("{m}",min).replace("{s}","★".repeat(stars)).replace("{t}",String(d.getHours()).padStart(2,"0")+":"+String(d.getMinutes()).padStart(2,"0")))}
+/* aanmaken en meedoen */
+function seg(id,opts,cur){return'<div class="seg" id="'+id+'" style="grid-template-columns:repeat('+Math.min(opts.length,3)+',1fr)">'+opts.map(o=>'<button type="button" data-v="'+o[0]+'" aria-pressed="'+(String(o[0])===String(cur))+'" style="color:#1b2233;border-color:'+(String(o[0])===String(cur)?"#a5392c":"#c9bfa6")+'">'+o[1]+'</button>').join("")+'</div>'}
+function grpForm(cfg,join){
+  const V2=cfg.m==="V",who=V2?[[0,T.gTeam+" A"],[1,T.gTeam+" B"]]:Array.from({length:cfg.n},(x,i)=>[i,T.gPl+" "+(i+1)]);if(cfg.me>=who.length)cfg.me=0;
+  sheet('<div class="eyebrow">'+T.bGrp+'</div><h2>'+(join?T.gJoinH:T.gH)+'</h2><p>'+(join?esc(STORIES[cfg.sid].n)+" · "+(V2?T.gModeV:T.gModeS+" · "+cfg.n+" "+T.gPls)+". ":T.gT+" ")+(V2?T.gRuleV:T.gRuleS)+'</p>'+
+    (join?'':'<div class="eyebrow">'+T.gMode+'</div>'+seg("gM",[["S",T.gModeS],["V",T.gModeV]],cfg.m)+(V2?'':'<div class="eyebrow">'+T.gCnt+'</div>'+seg("gN",[2,3,4,5,6,7,8,9,10].map(n=>[n,n]),cfg.n)))+
+    '<div class="eyebrow">'+T.gYou+'</div>'+seg("gW",who,cfg.me)+
+    '<button type="button" class="btn" id="gGo">'+(join?T.gJoin:T.gMake)+'</button><button type="button" class="btn ghost dk" id="shX">'+T.cancel+'</button>');
+  $("#sheetBody").onclick=e=>{const b=e.target.closest("button");if(!b)return;const p=b.parentNode.id;
+    if(b.id==="shX")closeSheet();
+    else if(p==="gM"){cfg.m=b.dataset.v;if(cfg.m==="V")cfg.n=2;else if(cfg.n<2)cfg.n=4;grpForm(cfg,join)}
+    else if(p==="gN"){cfg.n=+b.dataset.v;grpForm(cfg,join)}
+    else if(p==="gW"){cfg.me=+b.dataset.v;grpForm(cfg,join)}
+    else if(b.id==="gGo"){if(!join&&!groupLeft()){proSheet("groep");return}closeSheet();
+      if(join){setLen(cfg.short);RUN=cfg.sid;GRP={m:cfg.m,n:cfg.n,me:cfg.me,o:cfg.o,st:cfg.st};startGps(cfg.seed)}
+      else{RUN=pickS();GRP={m:cfg.m,n:cfg.m==="V"?2:cfg.n,me:cfg.me};startGps(Math.floor(Math.random()*4e9))}}}}
+function grpOpen(v){const c=parseG(v);if(!c){toast(T.gBadL);return false}c.me=0;grpForm(c,true);return true}
+$("#bGrp").onclick=()=>{if(!groupLeft())return proSheet("groep");grpForm({m:"S",n:4,me:0},false)};
+
+home();if(HG)grpOpen(HG[1]);else if(HZ)codeSheet(HZ[1]);
 })();
 </script>
 <script type="text/plain" id="h-en">
@@ -852,9 +1019,14 @@ home();
         <button type="button" data-r="380" data-par="45" aria-pressed="false">Short · 45 min</button>
         <button type="button" data-r="650" data-par="90" aria-pressed="true">Full · 90 min</button>
       </div>
+      <div class="eyebrow">Choose your story</div>
+      <div class="seg" id="stories"></div>
+      <p class="note" id="stTag"></p>
       <button class="btn" id="bResume" hidden>Pick up your case</button>
       <button class="btn" id="bGps">Start today's case</button>
       <button class="btn ghost" id="bRandom">Extra case right here</button>
+      <button class="btn ghost" id="bCode">Enter a case code</button>
+      <button class="btn ghost" id="bGrp">Group case</button>
       <button class="btn ghost sm" id="bDemo">Trial round in a fictional Amsterdam</button>
       <button class="btn ghost" id="bPro" hidden></button>
       <p class="note" id="status"></p>
@@ -864,6 +1036,7 @@ home();
         <li>Rare shades only show when you are close. Catch them for your Book of Shades and a tip.</li>
       </ol>
       <button class="btn ghost" id="bBookHome">Book of Shades</button>
+      <button class="btn ghost" id="bArch">Case archive</button>
       <button class="btn ghost sm" id="bWipe">Erase</button>
       <p class="note">Stay on public roads and mind the traffic. You never have to go inside anywhere.</p>
     </div>
@@ -878,6 +1051,7 @@ home();
         <div class="eyebrow">Six suspects</div>
         <div class="list" id="bfSus"></div>
       </div>
+      <button class="btn ghost" id="bInv" hidden>Send the invitation</button>
       <button class="btn" id="bGo">Into the night</button>
       <button class="btn ghost" id="bBack">Back</button>
     </div>
@@ -947,10 +1121,10 @@ function witText(t,v){
 function traitMask(sus,t,v){let m=0;sus.forEach((s,i)=>{if(s.tr[t]===v)m|=1<<i});return m}
 function solve(c){ // alle daders die passen bij: bewijs waar, precies één getuige liegt
   const out=[];for(let k=0;k<6;k++){if(c.ev.some(e=>!(e.mask>>k&1)))continue;let lies=0;c.wit.forEach(w=>{if(!(w.mask>>k&1))lies++});if(lies===1)out.push(k)}return out}
-function genCase(seed){
+function genCase(seed,S){
   const r=rngOf(seed),pick=a=>a[Math.floor(r()*a.length)];
   for(let tries=0;tries<4000;tries++){
-    const sus=shuffle(POOL,r).slice(0,6).map(p=>{const tr={};for(const t in TR)tr[t]=pick(TR[t]);return{name:p[0],role:p[1],tr}});
+    const sus=shuffle(S?S.pool:POOL,r).slice(0,6).map(p=>{const tr={};for(const t in TR)tr[t]=pick(TR[t]);return{name:p[0],role:p[1],tr}});
     const k=Math.floor(r()*6),keys=shuffle(Object.keys(TR),r),evT=keys.slice(0,3),free=keys.slice(3);
     const ev=evT.map(t=>{const v=sus[k].tr[t],x=evText(t,v);return{trait:t,val:v,mask:traitMask(sus,t,v),title:x[0],text:x[1]}});
     let cand=63;ev.forEach(e=>cand&=e.mask);let n=0;for(let i=0;i<6;i++)n+=cand>>i&1;if(n<2||n>3)continue;
@@ -969,7 +1143,7 @@ function genCase(seed){
       }
     }
     if(!ok)continue;
-    const c={seed,victim:pick(VICTIMS),sus,killer:k,ev,wit,liar};
+    const c={seed,victim:pick(S?S.vic:VICTIMS),sus,killer:k,ev,wit,liar};
     const s=solve(c);if(s.length===1&&s[0]===k)return c;
   }
   return null;
@@ -1025,8 +1199,8 @@ function home(){
   const pro=isPro(),lk=locked();
   $("#bGps").textContent=(lk?"🔒 ":"")+(prof.last===today()?"Replay today's case":"Start today's case");
   $("#bRandom").textContent=(lk?"🔒 ":"")+T.pExtra;$("#bPro").hidden=pro;$("#bPro").textContent=T.pBtn+" · "+PRO.price;
-  $("#status").textContent=pro?T.pOn:lk?T.pUsed:T.pFree;
-  show("home");heroStart();
+  $("#status").textContent=(pro?T.pOn:lk?T.pUsed:T.pFree)+(groupLeft()?" "+T.gpOn.replace("{h}",Math.ceil(groupLeft()/36e5)):"");$("#bGrp").textContent=(groupLeft()?"":"🔒 ")+T.bGrp;
+  storyUI();show("home");heroStart();
 }
 $("#len").addEventListener("click",e=>{const b=e.target.closest("button");if(!b)return;R0=+b.dataset.r;PAR=+b.dataset.par;document.querySelectorAll("#len button").forEach(x=>x.setAttribute("aria-pressed",x===b))});
 $("#bGps").onclick=()=>locked()?proSheet():startGps(hashStr(today()));
@@ -1037,12 +1211,42 @@ $("#bResume").onclick=()=>{G=LS.get("ss_game_en",null);W=LS.get("ss_ways_en",[])
 $("#bBookHome").onclick=()=>bookSheet();
 
 /* ---------- Pro ---------- */
-const PRO=window.SS_PRO||{},proNorm=s=>String(s||"").toUpperCase().replace(/[^A-Z0-9]/g,"");
-function isPro(){return !PRO.hash||hashStr(proNorm(LS.get("ss_pro","")))===PRO.hash}
+/* ---------- Pro en groepspas: codes uit codes.json ---------- */
+const PRO=window.SS_PRO||{},GP=PRO.groep||{},proNorm=s=>String(s||"").toUpperCase().replace(/[^A-Z0-9]/g,"");
+function sha256(s){const K=[],H=[],W=[];let n=2,i=0;const fr=x=>((x-Math.floor(x))*4294967296)|0;
+  for(;i<64;n++){let p=true;for(let d=2;d*d<=n;d++)if(n%d===0){p=false;break}if(p){if(i<8)H[i]=fr(Math.pow(n,.5));K[i++]=fr(Math.pow(n,1/3))}}
+  const b=unescape(encodeURIComponent(s)),l=b.length,m=[];for(i=0;i<l;i++)m[i>>2]|=b.charCodeAt(i)<<(24-i%4*8);m[l>>2]|=0x80<<(24-l%4*8);m[((l+8>>6)<<4)+15]=l*8;
+  const R=(x,k)=>x>>>k|x<<(32-k);
+  for(let j=0;j<m.length;j+=16){let a=H[0],b2=H[1],c=H[2],d=H[3],e=H[4],f=H[5],g=H[6],h=H[7];
+    for(i=0;i<64;i++){W[i]=i<16?m[j+i]|0:(R(W[i-2],17)^R(W[i-2],19)^W[i-2]>>>10)+W[i-7]+(R(W[i-15],7)^R(W[i-15],18)^W[i-15]>>>3)+W[i-16]|0;
+      const t1=h+(R(e,6)^R(e,11)^R(e,25))+(e&f^~e&g)+K[i]+W[i]|0,t2=(R(a,2)^R(a,13)^R(a,22))+(a&b2^a&c^b2&c)|0;h=g;g=f;f=e;e=d+t1|0;d=c;c=b2;b2=a;a=t1+t2|0}
+    H[0]=H[0]+a|0;H[1]=H[1]+b2|0;H[2]=H[2]+c|0;H[3]=H[3]+d|0;H[4]=H[4]+e|0;H[5]=H[5]+f|0;H[6]=H[6]+g|0;H[7]=H[7]+h|0}
+  return H.map(x=>(x>>>0).toString(16).padStart(8,"0")).join("")}
+let CODES=LS.get("ss_codes",[]),codesOk=false;
+const codesP=fetch("codes.json?"+Date.now(),{cache:"no-store"}).then(r=>{if(!r.ok)throw 0;return r.json()}).then(d=>{CODES=(d&&d.codes)||[];LS.set("ss_codes",CODES);codesOk=true;if(!$("#home").hidden&&$("#sheet").hidden&&!G)home()}).catch(()=>{});
+const entry=h=>CODES.find(x=>x&&x.h===h),dayNum=s=>{const p=String(s).split("-");return p[0]*10000+p[1]*100+ +p[2]};
+function valid(e,t){return !!e&&!e.uit&&(e.t||"pro")===t&&(!e.tot||dayNum(today())<=dayNum(e.tot))}
+// wie de oude code al had ingevoerd, blijft Pro
+if(!LS.get("ss_proH","")&&PRO.hash&&hashStr(proNorm(LS.get("ss_pro","")))===PRO.hash)LS.set("ss_proH","oud");
+function isPro(){const h=LS.get("ss_proH","");if(!h)return false;const e=entry(h);return !(e&&e.uit)}
 function locked(){return !isPro()&&!!LS.get("ss_free",0)}
-function proSheet(){
-  sheet('<div class="eyebrow">Pro</div><h2>'+T.pH+'</h2><p>'+T.pT+'</p><a class="btn" href="'+esc(PRO.url||"#")+'" target="_blank" rel="noopener">'+T.pBtn+' · '+esc(PRO.price||"")+'</a><div class="eyebrow">'+T.pHave+'</div><input class="inp" id="pCode" autocomplete="off" autocapitalize="characters" spellcheck="false" aria-label="'+T.pHave+'"><button type="button" class="btn ghost dk" id="pOk">'+T.pUse+'</button><p class="note" id="pMsg" style="color:#a5392c"></p><button type="button" class="btn ghost dk" id="shX">'+T.cancel+'</button>');
-  const go=()=>{const c=proNorm($("#pCode").value);if(c&&hashStr(c)===PRO.hash){LS.set("ss_pro",c);closeSheet();home();toast(T.pOk)}else{$("#pMsg").textContent=T.pBad;buzz(120)}};
+function groupLeft(){const g=LS.get("ss_grp",null);if(!g)return 0;const e=entry(g.h);if(e&&e.uit)return 0;return Math.max(0,g.t0+(GP.uren||48)*36e5-Date.now())}
+function redeem(v){const c=proNorm(v);if(!c)return null;
+  if(PRO.hash&&hashStr(c)===PRO.hash){LS.set("ss_proH","oud");return"pro"}
+  const h=sha256("moordwandeling|"+c),e=entry(h);if(!e)return null;
+  if(valid(e,"pro")){LS.set("ss_proH",h);return"pro"}
+  if(valid(e,"groep")){const cur=LS.get("ss_grp",null),used=LS.get("ss_grpU",[]);if(cur&&cur.h===h&&groupLeft())return"groep";if(used.includes(h))return"used";
+    used.push(h);LS.set("ss_grpU",used);LS.set("ss_grp",{h,t0:Date.now()});return"groep"}
+  return"exp"}
+function proSheet(kind){
+  const g=kind==="groep",url=g?GP.url:PRO.url,price=g?GP.price:PRO.price,U=s=>s.replace(/\{u\}/g,GP.uren||48).replace(/\{n\}/g,GP.max||10);
+  sheet('<div class="eyebrow">'+(g?T.bGrp:"Pro")+'</div><h2>'+(g?T.gpH:T.pH)+'</h2><p>'+(g?U(T.gpT):T.pT)+'</p>'+(url?'<a class="btn" href="'+esc(url)+'" target="_blank" rel="noopener">'+(g?T.gpBtn:T.pBtn)+(price?' · '+esc(price):'')+'</a>':'')+'<div class="eyebrow">'+T.pHave+'</div><input class="inp" id="pCode" autocomplete="off" autocapitalize="characters" spellcheck="false" aria-label="'+T.pHave+'"><button type="button" class="btn ghost dk" id="pOk">'+T.pUse+'</button><p class="note" id="pMsg" style="color:#a5392c"></p><button type="button" class="btn ghost dk" id="shX">'+T.cancel+'</button>');
+  let busy=false;
+  const go=async()=>{if(busy)return;busy=true;const v=$("#pCode").value,m=$("#pMsg");if(!codesOk){m.textContent=T.pWait;await codesP}
+    const r=redeem(v);busy=false;
+    if(r==="pro"){closeSheet();home();toast(T.pOk)}
+    else if(r==="groep"){closeSheet();home();toast(U(T.gpOk))}
+    else{const e=$("#pMsg");if(e)e.textContent=r==="exp"?T.pExp:r==="used"?T.pUsedC:!codesOk&&CODES.length===0?T.pNoNet:T.pBad;buzz(120)}};
   $("#sheetBody").onclick=e=>{if(e.target.id==="shX")closeSheet();else if(e.target.id==="pOk")go()};
   $("#pCode").onkeydown=e=>{if(e.key==="Enter")go()};
 }
@@ -1060,13 +1264,15 @@ function startGps(seed){
   if(!navigator.geolocation){fail("This device won't give a location. You can still play the practice round.");return}
   st.textContent="Finding your location…";
   navigator.geolocation.getCurrentPosition(async pos=>{
-    const lat=pos.coords.latitude,lon=pos.coords.longitude,R=R0;
+    const gl=GRP&&GRP.o,lat=gl?gl[0]:pos.coords.latitude,lon=gl?gl[1]:pos.coords.longitude,R=R0;if(gl&&Math.hypot((pos.coords.longitude-lon)*111320*Math.cos(lat*Math.PI/180),(pos.coords.latitude-lat)*110540)>2500)toast(T.gFar);
     const kx=111320*Math.cos(lat*Math.PI/180),ky=110540,xy=(la,lo)=>[(lo-lon)*kx,-(la-lat)*ky],A="(around:"+R+","+lat+","+lon+")";
-    const hosts=["https://overpass-api.de/api/interpreter","https://overpass.private.coffee/api/interpreter","https://maps.mail.ru/osm/tools/overpass/api/interpreter"];
-    // alle servers tegelijk vragen; de eerste die antwoordt wint
-    const ask=(q,ms)=>{const ac=new AbortController(),to=setTimeout(()=>ac.abort(),ms);
-      return Promise.any(hosts.map(h=>fetch(h,{method:"POST",headers:{"Content-Type":"application/x-www-form-urlencoded"},body:"data="+encodeURIComponent(q),signal:ac.signal}).then(r=>{if(!r.ok)throw new Error("server "+r.status);return r.json()})))
-        .then(d=>{clearTimeout(to);ac.abort();return d},e=>{clearTimeout(to);throw e})};
+    const hosts=window.SS_MAP||["https://overpass.private.coffee/api/interpreter","https://maps.mail.ru/osm/tools/overpass/api/interpreter","https://overpass-api.de/api/interpreter"];
+    // eerst één server; pas na 4 en 8 seconden zonder antwoord (of meteen bij een fout) de volgende erbij
+    const ask=(q,ms)=>new Promise((res,rej)=>{const ac=new AbortController(),ts=[];let nx=0,left=hosts.length,done=false;
+      const fin=(ok,v)=>{if(done)return;done=true;ts.forEach(clearTimeout);ac.abort();ok?res(v):rej(v)};
+      const start=()=>{if(done||nx>=hosts.length)return;const h=hosts[nx++];
+        fetch(h,{method:"POST",headers:{"Content-Type":"application/x-www-form-urlencoded"},body:"data="+encodeURIComponent(q),signal:ac.signal}).then(r=>{if(!r.ok)throw new Error("server "+r.status);return r.json()}).then(d=>fin(true,d),e=>{if(--left<=0)fin(false,e);else start()})};
+      start();ts.push(setTimeout(start,4000),setTimeout(start,8000),setTimeout(()=>fin(false,new Error("timeout")),ms))});
     let pois=[],ways=[];const c=LS.get("ss_map",null);
     // deze buurt al eens geladen: meteen starten
     if(c&&c.R>=R&&c.pois&&c.pois.length&&Math.hypot((c.lon-lon)*kx,(c.lat-lat)*ky)<150){const ox=(c.lon-lon)*kx,oy=-(c.lat-lat)*ky;
@@ -1074,7 +1280,7 @@ function startGps(seed){
       st.textContent="";build(seed,"gps",pois,ways,{lat,lon,kx,ky});return}
     st.textContent="Finding places near you…";
     try{
-      const d=await ask('[out:json][timeout:15];(nwr'+A+'[amenity~"^(place_of_worship|bank|atm|cafe|pub|bar|restaurant|pharmacy|post_box|library|school|fuel)$"];nwr'+A+'[tourism~"^(hotel|artwork|museum)$"];nwr'+A+'[shop~"^(supermarket|bakery|convenience)$"];node'+A+'[highway=bus_stop];nwr'+A+'[leisure~"^(park|playground)$"];);out center qt 400;',18000);
+      const d=GRP&&GRP.st?{elements:[]}:await ask('[out:json][timeout:15];(nwr'+A+'[amenity~"^(place_of_worship|bank|atm|cafe|pub|bar|restaurant|pharmacy|post_box|library|school|fuel)$"];nwr'+A+'[tourism~"^(hotel|artwork|museum)$"];nwr'+A+'[shop~"^(supermarket|bakery|convenience)$"];node'+A+'[highway=bus_stop];nwr'+A+'[leisure~"^(park|playground)$"];);out center qt 400;',18000);
       for(const e of d.elements||[]){const ty=poiType(e.tags),q=e.type==="node"?[e.lat,e.lon]:e.center?[e.center.lat,e.center.lon]:null;if(!ty||!q)continue;const p=xy(q[0],q[1]);pois.push({x:p[0],y:p[1],type:ty,name:e.tags.name||""})}
     }catch(e){toast("The map service is not answering. Your leads are placed within walking distance.")}
     st.textContent="";build(seed,"gps",pois,[],{lat,lon,kx,ky});
@@ -1098,7 +1304,7 @@ function demoWorld(){
   return{ways,pois:L.map(l=>{const t=l[1]*Math.PI/180;return{x:Math.round(l[0]*Math.cos(t)),y:Math.round(cy+l[0]*Math.sin(t)),type:l[2],name:l[3]}})};
 }
 function build(seed,mode,pois,ways,origin){
-  const c=genCase(seed);if(!c){toast("This case won't add up. Try an extra case.");return}
+  const SD=STORIES[RUN]||STORIES.c,c=genCase(seed,SD.pool?SD:null);if(!c){toast("This case won't add up. Try an extra case.");return}
   const r=rngOf(seed^0x9e3779b9),R=R0,far=(p,l,m)=>l.every(q=>Math.hypot(q.x-p.x,q.y-p.y)>=m);
   let min=Math.max(90,R*.24);const ch=[],cand=shuffle(pois.filter(p=>{const d=Math.hypot(p.x,p.y);return d>70&&d<=R}),r).sort((a,b)=>PRI.indexOf(a.type)-PRI.indexOf(b.type));
   for(let pass=0;pass<2&&ch.length<8;pass++)for(const p of cand){if(ch.length>=8)break;const n=ch.filter(q=>q.type===p.type).length;if(ch.includes(p)||n>pass||p.type==="bankje"&&pass===0&&cand.length>12)continue;if(far(p,ch,min))ch.push(p)}
@@ -1111,21 +1317,22 @@ function build(seed,mode,pois,ways,origin){
   const order=shuffle(ch,r),usedP={},spare=SPARE.slice();
   // plaats delict liefst park of rustige hoek
   const pd=order.findIndex(p=>p.type==="park");if(pd>0)[order[0],order[pd]]=[order[pd],order[0]];
+  if(GRP&&GRP.st){order.length=0;GRP.st.forEach(q=>order.push({x:q.x,y:q.y,type:q.type,name:q.name||""}))}
   const st=order.map((p,i)=>{const T=TYPES[p.type];let persona=T[1];if(i>=3){if(usedP[persona])persona=spare.shift()||"a passer-by";usedP[persona]=1}
-    return{x:Math.round(p.x),y:Math.round(p.y),type:p.type,name:p.name||T[0].replace(/^the /,"").replace(/^./,m=>m.toUpperCase()),noun:T[0],kind:i<3?"ev":"wit",idx:i<3?i:i-3,persona:i>=3?persona:"",done:false}});
+    return{x:Math.round(p.x),y:Math.round(p.y),type:p.type,nm:p.name||"",name:p.name||T[0].replace(/^the /,"").replace(/^./,m=>m.toUpperCase()),noun:T[0],kind:i<3?"ev":"wit",idx:i<3?i:i-3,persona:i>=3?persona:"",done:false}});
   // zeldzame schimmen tussen de sporen
-  const rare=[];for(let i=0;i<3;i++){const a=st[Math.floor(r()*st.length)],b=st[Math.floor(r()*st.length)],f=.3+.4*r(),x=r(),tier=x<.08?3:x<.35?2:1,opts=SHADES.map((s,j)=>j).filter(j=>SHADES[j][1]===tier&&!rare.some(q=>q.id===j));
-    rare.push({x:Math.round(a.x+(b.x-a.x)*f+(r()-.5)*120),y:Math.round(a.y+(b.y-a.y)*f+(r()-.5)*120),id:opts[Math.floor(r()*opts.length)],done:false})}
-  G={mode,R,par:PAR,seed,c,st,rare,t0:0,dist:0,ms:[0,0,0,0,0,0],mw:[0,0,0,0,0],tips:[],tries:0,origin,px:0,py:0};
+  const rare=[];{const r=rngOf(seed^0x85ebca6b);for(let i=0;i<3;i++){const a=st[Math.floor(r()*st.length)],b=st[Math.floor(r()*st.length)],f=.3+.4*r(),x=r(),tier=x<.08?3:x<.35?2:1,opts=SHADES.map((s,j)=>j).filter(j=>SHADES[j][1]===tier&&!rare.some(q=>q.id===j));
+    rare.push({x:Math.round(a.x+(b.x-a.x)*f+(r()-.5)*120),y:Math.round(a.y+(b.y-a.y)*f+(r()-.5)*120),id:opts[Math.floor(r()*opts.length)],done:false})}}
+  G={mode,R,par:PAR,seed,c,st,rare,t0:0,dist:0,ms:[0,0,0,0,0,0],mw:[0,0,0,0,0],tips:[],tries:0,origin,px:0,py:0,story:RUN,code:codeOf(RUN,PAR,seed),grp:GRP?mkGrp(seed):null};GRP=null;
   W=ways;P={x:0,y:0,acc:0};LS.set("ss_ways_en",W);
   // briefing
-  const v=c.victim;$("#bfNo").textContent="Case file "+String(seed%10000).padStart(4,"0")+(mode==="demo"?" · practice round":"");
+  const v=c.victim;$("#bfNo").textContent="Case file "+G.code+" · "+SD.n+(mode==="demo"?" · practice round":"");
   $("#bfTitle").textContent="The death of "+v[0];
-  $("#bfText").textContent=v[0]+", "+v[1]+", was found dead at 23:40 near "+st[0].noun+(st[0].name&&!/^(Church|Bank|Park|Street corner)/.test(st[0].name)?" ("+st[0].name+")":"")+". "+v[2]+" Three places hold evidence. At five others a shade lingers who saw something. Exactly one of those five is lying.";
-  $("#bfSus").innerHTML=c.sus.map(susCard).join("");show("brief");
+  $("#bfText").textContent=(SD.intro?SD.intro+" ":"")+v[0]+", "+v[1]+", was found dead at 23:40 near "+st[0].noun+(st[0].name&&!/^(Church|Bank|Park|Street corner)/.test(st[0].name)?" ("+st[0].name+")":"")+". "+v[2]+" Three places hold evidence. At five others a shade lingers who saw something. Exactly one of those five is lying.";
+  grpBrief();$("#bfSus").innerHTML=c.sus.map(susCard).join("");show("brief");
 }
 function susCard(s,i){return `<div class="sus"><b>${esc(s.name)}</b><small>${esc(s.role)}, ${esc(vn(motOf(s.name)[0]))}</small><div class="tags"><i>${ADJ[s.tr.jas]} coat</i><i>${s.tr.bril}</i><i>${s.tr.hand}-handed</i><i>${s.tr.schoen}</i><i>${s.tr.lengte==="tall"?"tall":"short"}</i></div></div>`}
-$("#bGo").onclick=()=>{G.t0=Date.now();if(G.mode==="gps")LS.set("ss_free",1);save();enter()};
+$("#bGo").onclick=()=>{G.t0=Date.now();if(G.mode==="gps"&&!G.grp)LS.set("ss_free",1);save();enter()};
 function save(){if(G){G.px=P.x;G.py=P.y;LS.set("ss_game_en",G)}}
 function enter(){
   show("play");V.follow=true;V.s=Math.min(innerWidth,innerHeight)/(G.R*1.5);sel=null;walkTo=null;arrived=null;$("#chip").hidden=true;
@@ -1162,10 +1369,10 @@ function draw(t){
   const bob=still?0:Math.sin(t/500)*3;
   cx.font="600 12px 'Barlow Condensed','Arial Narrow',sans-serif";cx.textAlign="center";
   G.st.forEach((s,i)=>{const X=sx(s.x),Y=sy(s.y);
-    if(s.kind==="wit")ghost(cx,X,Y+(s.done?0:bob*.4),38,"#a6ead9",s.done?.3:.95);
-    else{cx.save();cx.globalAlpha=s.done?.35:1;cx.fillStyle="#f0a63a";cx.translate(X,Y);cx.rotate(Math.PI/4);cx.fillRect(-9,-9,18,18);cx.restore();if(!s.done&&!still){cx.strokeStyle="rgba(240,166,58,"+(.6-((t/1500)%1)*.6)+")";cx.lineWidth=2;cx.beginPath();cx.arc(X,Y,12+((t/1500)%1)*16,0,7);cx.stroke()}}
+    if(s.kind==="wit")ghost(cx,X,Y+(s.done?0:bob*.4),38,"#a6ead9",s.done?.3:canOpen(s)?.95:.4);
+    else{cx.save();cx.globalAlpha=s.done?.35:canOpen(s)?1:.4;cx.fillStyle="#f0a63a";cx.translate(X,Y);cx.rotate(Math.PI/4);cx.fillRect(-9,-9,18,18);cx.restore();if(!s.done&&!still&&canOpen(s)){cx.strokeStyle="rgba(240,166,58,"+(.6-((t/1500)%1)*.6)+")";cx.lineWidth=2;cx.beginPath();cx.arc(X,Y,12+((t/1500)%1)*16,0,7);cx.stroke()}}
     if(sel===s){cx.strokeStyle="#ece4d2";cx.lineWidth=2;cx.beginPath();cx.arc(X,Y,24,0,7);cx.stroke()}
-    cx.fillStyle=s.done?"#5f7090":"#ece4d2";if(V.s>=.4||sel===s)cx.fillText((s.done?"✓ ":"")+s.name.toUpperCase().slice(0,26),X,Y+40)});
+    const lk=!s.done&&!canOpen(s);cx.fillStyle=s.done||lk?"#5f7090":"#ece4d2";if(V.s>=.4||sel===s)cx.fillText((s.done||gotI(i)?"✓ ":"")+(lk?ownTag(i).toUpperCase()+" · ":"")+s.name.toUpperCase().slice(0,26),X,Y+40)});
   G.rare.forEach(q=>{if(q.done||dTo(q)>200)return;const X=sx(q.x),Y=sy(q.y),tier=SHADES[q.id][1];ghost(cx,X,Y-bob*.4,42,tier===3?"#f0a63a":tier===2?"#c9a6ea":"#ffffff",still?.8:.5+.4*Math.abs(Math.sin(t/300)));cx.fillStyle="#ece4d2";cx.fillText("???",X,Y+42);if(sel===q){cx.strokeStyle="#ece4d2";cx.lineWidth=2;cx.beginPath();cx.arc(X,Y,26,0,7);cx.stroke()}});
   // speler
   const X=sx(P.x),Y=sy(P.y);cx.fillStyle="rgba(240,166,58,.12)";cx.beginPath();cx.arc(X,Y,35*V.s,0,7);cx.fill();cx.strokeStyle="rgba(240,166,58,.5)";cx.lineWidth=1;cx.stroke();
@@ -1179,13 +1386,13 @@ function loop(t){
   if(!loop.n||t-loop.n>500){loop.n=t;tick()}
   requestAnimationFrame(loop);
 }
-function targets(){return G.st.filter(s=>!s.done).concat(G.rare.filter(q=>!q.done&&dTo(q)<=200))}
+function targets(){return G.st.filter(s=>!s.done&&canOpen(s)).concat(G.rare.filter(q=>!q.done&&dTo(q)<=200))}
 function tick(){
   const el=Math.floor((Date.now()-G.t0)/1000);$("#hT").textContent=Math.floor(el/60)+":"+String(el%60).padStart(2,"0");
-  $("#hS").textContent=G.st.filter(s=>s.done).length+"/8";$("#hG").textContent=G.rare.filter(q=>q.done).length+"/3";$("#hD").textContent=(G.dist/1000).toFixed(1);
+  $("#hS").textContent=G.st.filter((s,i)=>s.done||gotI(i)).length+"/8";$("#hG").textContent=G.rare.filter(q=>q.done).length+"/3";$("#hD").textContent=(G.dist/1000).toFixed(1);
   const ts=targets();let near=null,nd=1e9;ts.forEach(s=>{const d=dTo(s);if(d<nd){nd=d;near=s}});
   nearD=nd;const rr=G.rare.find(q=>!q.done&&dTo(q)<=320&&dTo(q)>200);
-  $("#radar").textContent=!near?"All leads in. Time to accuse.":rr?"Something is prowling close by…":nd<60?"Hot. "+Math.round(nd)+" m to go":nd<150?"Warm. "+Math.round(nd)+" m to go":"Nearest lead: "+Math.round(nd)+" m";
+  $("#radar").textContent=!near?G.grp&&!G.st.every(s=>s.done)?T.gRadar:"All leads in. Time to accuse.":rr?"Something is prowling close by…":nd<60?"Hot. "+Math.round(nd)+" m to go":nd<150?"Warm. "+Math.round(nd)+" m to go":"Nearest lead: "+Math.round(nd)+" m";
   const here=ts.find(inRange);
   if(here&&arrived!==here&&$("#sheet").hidden){arrived=here;sel=here;buzz([80,60,80]);beep(660,.2)}
   if(!here)arrived=null;
@@ -1201,8 +1408,9 @@ function chip(){
   else if(G.mode==="demo")b.textContent="Walk here";
   else if(d<150)b.textContent="GPS is off, I'm here";
   else b.hidden=true;
+  if(G.grp&&!rare&&!canOpen(sel)){$("#cHint").textContent=lockHint(sel);b.hidden=true}
 }
-$("#cAct").onclick=()=>{if(!sel)return;if(inRange(sel))encounter(sel);else if(G.mode==="demo"){walkTo={x:sel.x,y:sel.y};V.follow=true}else if(dTo(sel)<150){G.force=sel;encounter(sel)}};
+$("#cAct").onclick=()=>{if(!sel||(sel.id==null&&!canOpen(sel)))return;if(inRange(sel))encounter(sel);else if(G.mode==="demo"){walkTo={x:sel.x,y:sel.y};V.follow=true}else if(dTo(sel)<150){G.force=sel;encounter(sel)}};
 let pd=null;
 cv.addEventListener("pointerdown",e=>{pd={x:e.clientX,y:e.clientY,ox:V.follow?P.x:V.ox,oy:V.follow?P.y:V.oy,drag:false};cv.setPointerCapture(e.pointerId)});
 cv.addEventListener("pointermove",e=>{if(!pd)return;const dx=e.clientX-pd.x,dy=e.clientY-pd.y;if(!pd.drag&&Math.hypot(dx,dy)>8)pd.drag=true;if(pd.drag){V.follow=false;V.ox=pd.ox-dx/V.s;V.oy=pd.oy-dy/V.s}});
@@ -1328,7 +1536,7 @@ const KF={"Iris Vaughan":["someone clutching a leather folder under one arm","�
 "Otto Plum":["someone in white cotton gloves","“Nobody would ever have seen the difference!”","A cracked magnifying glass lies in the gutter."],
 "Nora Havering":["someone who keeps glancing over one shoulder","“That signature was a formality!”","A lapel pin with the council crest lies on the ground."],
 "Giles Tarrant":["someone with grease on both hands","“This stopped being about the fence long ago!”","A valve cap lies on the stones."]};
-const fragList=()=>{const v=VF[G.c.victim[0]],k=KF[G.c.sus[G.c.killer].name];return[v[0],v[1],"20:45. {V} takes something from the safe and slips it into an inside pocket.","21:30. A neighbour sees {V} leave the house. No coat. In a hurry.","22:15. {V} stands talking to "+k[0]+".","22:50. Voices, getting louder. Someone shouts: "+k[1],"23:20. {V} walks on alone and keeps looking back.","23:40. A dull thud, then footsteps hurrying away. "+k[2]]};
+const fragList=()=>{const v=VF[G.c.victim[0]]||T.vfD,k=KF[G.c.sus[G.c.killer].name]||T.kfD,m=(STORIES[G.story||"c"]||{}).mid;return[v[0],v[1],(m?m[0]:"20:45. {V} takes something from the safe and slips it into an inside pocket."),(m?m[1]:"21:30. A neighbour sees {V} leave the house. No coat. In a hurry."),"22:15. {V} stands talking to "+k[0]+".","22:50. Voices, getting louder. Someone shouts: "+k[1],(m?m[2]:"23:20. {V} walks on alone and keeps looking back."),"23:40. A dull thud, then footsteps hurrying away. "+k[2]]};
 const vn=s=>s.replace(/\{V\}/g,G.c.victim[0]);
 /* ---------- camera: de schaduw in je eigen straat ---------- */
 function encounter(t){
@@ -1384,13 +1592,14 @@ function reveal(t){
   else{const w=G.c.wit[t.idx];say((INTRO[t.persona]||"")+" "+w.text,t.idx);h=`<div class="clue wit"><em>${esc(t.persona)} · witness</em>“${esc(INTRO[t.persona]||"I just happened to be passing.")} ${esc(w.text)}”</div><p class="note" style="color:#6a6250">One of the five witnesses is lying. This one?</p>`}
   if(t.id==null){const n=G.st.filter(x=>x.done).length;h+=`<div class="clue" style="border-color:#6a6250;margin-top:8px"><em>The last evening · ${n}/8</em>${esc(vn(fragList()[n-1]))}</div>`}
   $("#mgHint").hidden=true;$("#mgbox").hidden=true;
-  $("#mgOut").innerHTML=h+`<button class="btn" id="mgOk" style="margin-top:12px">Continue</button>`;
-  $("#mgOk").onclick=()=>{closeSheet();sel=null;save();if(G.st.every(s=>s.done))toast("All eight leads in. Open your notebook.")};
+  $("#mgOut").innerHTML=h+(G.grp&&t.id==null?codeHtml(G.st.indexOf(t)):"")+`<button class="btn" id="mgOk" style="margin-top:12px">Continue</button>`;
+  $("#mgOk").onclick=()=>{closeSheet();sel=null;save();if(G.grp&&!G.st.every(s=>s.done)){if(myLeft()===0)toast(T.gAllMine)}else if(G.st.every(s=>s.done))toast("All eight leads in. Open your notebook.")};
   save();
 }
 
 /* ---------- notitieboek ---------- */
 function noteSheet(tab){
+  if(tab==="g"&&G.grp)return grpSheet();
   const c=G.c,found=G.st.filter(s=>s.done);
   let body;
   if(tab==="v"){const n=found.length;body=`<p>${esc(c.victim[0])}, ${esc(c.victim[1])}. ${esc(c.victim[2])}</p><div class="eyebrow">The last evening · ${n}/8</div><div class="list">`+(fragList().slice(0,n).map(x=>`<div class="clue" style="border-color:#6a6250">${esc(vn(x))}</div>`).join("")||`<p class="note" style="color:#6a6250">Every lead you find gives back a piece of the evening.</p>`)+`</div>`}
@@ -1398,7 +1607,7 @@ function noteSheet(tab){
   else{const ev=found.filter(s=>s.kind==="ev"),wi=found.filter(s=>s.kind==="wit");
     body=`<div class="eyebrow">Evidence ${ev.length}/3 · always true</div><div class="list">`+(ev.map(s=>`<div class="clue"><b>${esc(c.ev[s.idx].title)}</b>${esc(c.ev[s.idx].text)}</div>`).join("")||`<p class="note" style="color:#6a6250">Nothing found yet.</p>`)+`</div>
     <div class="eyebrow">Witnesses ${wi.length}/5 · one is lying</div><p class="note" style="color:#6a6250">Tap to mark as truth or lie.</p><div class="list">`+(wi.map(s=>`<button type="button" data-w="${s.idx}" class="clue wit m${G.mw[s.idx]}"><em>${esc(s.persona)}${G.tips.includes(s.idx)?" · telling the truth (tip)":""}${G.mw[s.idx]===1?" · truth":G.mw[s.idx]===2?" · lie":""}</em>“${esc(c.wit[s.idx].text)}”</button>`).join("")||`<p class="note" style="color:#6a6250">Nobody questioned yet.</p>`)+`</div>`}
-  sheet(`<h2>Notebook</h2><div class="tabs"><button type="button" data-t="c" aria-selected="${tab==="c"}">Leads</button><button type="button" data-t="s" aria-selected="${tab==="s"}">Suspects</button><button type="button" data-t="v" aria-selected="${tab==="v"}">Story</button></div>${body}<button class="btn ghost" style="color:#1b2233;border-color:#c9bfa6" id="shX">Back to the map</button>`);
+  sheet(`<h2>Notebook</h2><div class="tabs"><button type="button" data-t="c" aria-selected="${tab==="c"}">Leads</button><button type="button" data-t="s" aria-selected="${tab==="s"}">Suspects</button><button type="button" data-t="v" aria-selected="${tab==="v"}">Story</button>${G.grp?`<button type="button" data-t="g" aria-selected="false">${T.gTab}</button>`:""}</div>${body}${G.grp&&tab==="c"?gotHtml(false):""}<button class="btn ghost" style="color:#1b2233;border-color:#c9bfa6" id="shX">Back to the map</button>`);
   $("#sheetBody").onclick=e=>{const b=e.target.closest("button");if(!b)return;if(b.dataset.t)noteSheet(b.dataset.t);else if(b.dataset.s){G.ms[b.dataset.s]^=1;noteSheet("s")}else if(b.dataset.w){G.mw[b.dataset.w]=(G.mw[b.dataset.w]+1)%3;noteSheet("c")}else if(b.id==="shX"){closeSheet()}};
 }
 $("#bNote").onclick=()=>noteSheet("c");
@@ -1410,7 +1619,7 @@ $("#bBook").onclick=bookSheet;
 
 /* ---------- beschuldigen ---------- */
 function accSheet(ps,pw){
-  const c=G.c,left=G.st.filter(s=>!s.done).length,wi=G.st.filter(s=>s.kind==="wit"&&s.done);
+  const c=G.c,left=G.st.filter((s,i)=>!s.done&&!gotI(i)).length,wi=G.st.filter((s,i)=>s.kind==="wit"&&(s.done||gotI(i)));
   sheet(`<h2>Who did it?</h2>${left?`<p style="color:#a5392c">You are still missing ${left} ${left===1?"lead":"leads"}. You can accuse, but you would be guessing.</p>`:""}
   <div class="grid2">`+c.sus.map((s,i)=>`<button type="button" data-s="${i}" class="sus${ps===i?" pick":""}${G.ms[i]?" out":""}"><b>${esc(s.name)}</b><small>${esc(s.role)}</small></button>`).join("")+`</div>
   <div class="eyebrow">And who lied? Worth an extra star</div><div class="list">`+(wi.map(s=>`<button type="button" data-w="${s.idx}" class="sus${pw===s.idx?" pick":""}"><b>${esc(s.persona)}</b></button>`).join("")||`<p class="note" style="color:#6a6250">You have not questioned any witnesses yet.</p>`)+`</div>
@@ -1420,13 +1629,13 @@ function accSheet(ps,pw){
 $("#bAcc").onclick=()=>accSheet(null,null);
 function verdict(ps,pw){
   const c=G.c;G.tries++;
-  if(ps!==c.killer){buzz([200,100,200]);beep(140,.5);save();
+  if(ps!==c.killer){if(G.grp&&G.grp.m==="V")toast(T.gPen);buzz([200,100,200]);beep(140,.5);save();
     sheet(`<div class="eyebrow">Wrong</div><h2>${esc(c.sus[ps].name)} has a watertight alibi</h2><p>The real killer is still out there. Look again at who could have lied. A wrong accusation costs you a star.</p><button class="btn" id="shX">Back to the leads</button>`);
     $("#sheetBody").onclick=e=>{if(e.target.id==="shX")closeSheet()};return}
-  const min=(Date.now()-G.t0)/60000,s2=pw===c.liar,s3=G.tries===1&&min<=G.par,stars=1+(s2?1:0)+(s3?1:0),xp=100+stars*50,before=rank(prof.xp);
+  const min=(Date.now()-G.t0)/60000+(G.grp&&G.grp.m==="V"?5*(G.tries-1):0),s2=pw===c.liar,s3=G.tries===1&&min<=G.par,stars=1+(s2?1:0)+(s3?1:0),xp=100+stars*50,before=rank(prof.xp);
   const t=today(),y=new Date(Date.now()-864e5),ys=y.getFullYear()+"-"+(y.getMonth()+1)+"-"+y.getDate();
   if(G.mode==="gps"){if(prof.last!==t){prof.streak=prof.last===ys?prof.streak+1:1;prof.last=t}prof.solved++}
-  prof.xp+=xp;LS.set("ss_prof",prof);LS.del("ss_game_en");buzz([100,50,100,50,300]);beep(660,.2);setTimeout(()=>beep(990,.4),200);
+  prof.xp+=xp;logCase(stars,min);LS.set("ss_prof",prof);LS.del("ss_game_en");buzz([100,50,100,50,300]);beep(660,.2);setTimeout(()=>beep(990,.4),200);
   let cand=63;c.ev.forEach(e=>cand&=e.mask);const names=c.sus.filter((s,i)=>cand>>i&1).map(s=>s.name).join(", ");
   const lp=G.st.find(x=>x.kind==="wit"&&x.idx===c.liar).persona,up=rank(prof.xp)>before;
   sheet(`<div class="eyebrow">Case closed</div><h2>${esc(c.sus[c.killer].name)} confesses</h2><div class="stars">${"★".repeat(stars)}${"☆".repeat(3-stars)}</div>
@@ -1434,9 +1643,9 @@ function verdict(ps,pw){
   <p>The evidence left: ${esc(names)}. The liar was ${esc(lp)}: “${esc(c.wit[c.liar].text)}” Take that lie out and only ${esc(c.sus[c.killer].name)} fits.</p>
   <div class="tags"><i>${Math.round(min)} min</i><i>${(G.dist/1000).toFixed(1)} km</i><i>${G.rare.filter(q=>q.done).length}/3 shades</i><i>+${xp} points</i>${G.mode==="gps"?`<i>${prof.streak} ${prof.streak===1?"day":"days"} in a row</i>`:""}</div>
   ${up?`<p><b>Promoted to ${RANKS[rank(prof.xp)][1]}.</b></p>`:""}${!s2?`<p class="note" style="color:#6a6250">Star missed: name the liar.</p>`:""}${!s3?`<p class="note" style="color:#6a6250">Star missed: right first time, within ${G.par} minutes.</p>`:""}
-  <button class="btn" id="shX">Back to the station</button>`);
+  <button type="button" class="btn ghost dk" id="shC">${G.grp?T.gResBtn:T.shBtn}</button><button class="btn" id="shX">Back to the station</button>`);
   $("#sheet").dataset.lock="1";
-  $("#sheetBody").onclick=e=>{if(e.target.id==="shX"){delete $("#sheet").dataset.lock;closeSheet();if(watchId!=null){navigator.geolocation.clearWatch(watchId);watchId=null}G=null;home()}};
+  $("#sheetBody").onclick=e=>{if(e.target.id==="shC"){if(G.grp){shareRes(stars,Math.round(min));return}shareCase(G.code||codeOf(G.story||"c",G.par,G.seed),stars,Math.round(min));return}if(e.target.id==="shX"){delete $("#sheet").dataset.lock;closeSheet();if(watchId!=null){navigator.geolocation.clearWatch(watchId);watchId=null}G=null;home()}};
 }
 /* ---------- levende startpagina: een straat in de regen waar je doorheen loopt ---------- */
 const hv=$("#hero"),hx=hv.getContext("2d");let hw=0,hh=0,heroRaf=0,figHit=null,figT0=0;const par={x:0,y:0,tx:0,ty:0};
@@ -1503,8 +1712,8 @@ function leavePlay(){save();stopWatch();G=null;home()}
 function wipeGame(){LS.del(GK);LS.del(WK);stopWatch();G=null;closeSheet();home();toast(T.wiped)}
 function confirmSheet(title,text,yes,fn){sheet('<h2>'+title+'</h2><p>'+text+'</p><button type="button" class="btn red" id="cfY">'+yes+'</button><button type="button" class="btn ghost dk" id="shX">'+T.cancel+'</button>');
   $("#sheetBody").onclick=e=>{if(e.target.id==="shX")closeSheet();else if(e.target.id==="cfY")fn()}}
-function menuSheet(){sheet('<h2>'+T.menu+'</h2><button type="button" class="btn" id="mBack">'+T.map+'</button><button type="button" class="btn ghost dk" id="mHome">'+T.home+'</button><button type="button" class="btn ghost dk" id="mWipe">'+T.wipeG+'</button>');
-  $("#sheetBody").onclick=e=>{const i=e.target.id;if(i==="mBack")closeSheet();else if(i==="mHome"){closeSheet();leavePlay();toast(T.saved)}else if(i==="mWipe")confirmSheet(T.wipeQ,T.wipeT,T.wipeY,wipeGame)}}
+function menuSheet(){sheet('<h2>'+T.menu+'</h2><button type="button" class="btn" id="mBack">'+T.map+'</button><button type="button" class="btn ghost dk" id="mHome">'+T.home+'</button>'+(G&&G.grp&&!G.grp.free?'<button type="button" class="btn ghost dk" id="mFree">'+T.gFree+'</button>':'')+'<button type="button" class="btn ghost dk" id="mWipe">'+T.wipeG+'</button>');
+  $("#sheetBody").onclick=e=>{const i=e.target.id;if(i==="mBack")closeSheet();else if(i==="mHome"){closeSheet();leavePlay();toast(T.saved)}else if(i==="mFree")confirmSheet(T.gFreeQ,T.gFreeT,T.gFree,()=>{G.grp.free=true;save();closeSheet()});else if(i==="mWipe")confirmSheet(T.wipeQ,T.wipeT,T.wipeY,wipeGame)}}
 function wipeSheet(){const has=!!LS.get(GK,null);sheet('<h2>'+T.wipeH+'</h2>'+(has?'<button type="button" class="btn ghost dk" id="wG">'+T.wipeY+'</button>':'')+'<button type="button" class="btn ghost dk" id="wA">'+T.wipeAll+'</button><button type="button" class="btn" id="shX">'+T.cancel+'</button>');
   $("#sheetBody").onclick=e=>{const i=e.target.id;if(i==="shX")closeSheet();else if(i==="wG")confirmSheet(T.wipeQ,T.wipeT,T.wipeY,wipeGame);
     else if(i==="wA")confirmSheet(T.allQ,T.allT,T.allY,()=>{LS.del(GK);LS.del(WK);LS.del("ss_prof");prof={xp:0,streak:0,last:"",solved:0,book:{}};closeSheet();home();toast(T.wiped)})}}
@@ -1517,25 +1726,156 @@ function goBack(){
   return false}
 try{history.pushState({ss:1},"");addEventListener("popstate",()=>{if(goBack()){try{history.pushState({ss:1},"")}catch(e){}}})}catch(e){}
 $("#zM").onclick=menuSheet;$("#bBack").onclick=()=>{goBack()};$("#bWipe").onclick=wipeSheet;
-home();
+/* ---------- verhalen, duel via zaakcode, archief ---------- */
+const STORIES={"c": {"n": "The Village", "tag": "The classic case. Twenty villagers, and every one of them had business with the victim."}, "t": {"n": "The Will", "tag": "The Lorne family has gathered. Tomorrow the will is read.", "intro": "The Lorne family is in town for the reading of the will, tomorrow morning at nine.", "mid": ["20:45. {V} lays out a sealed envelope for the solicitor and locks the drawer.", "21:30. The family sits down to dinner. {V}'s chair stays empty.", "23:20. {V} walks on alone, gripping the key to the drawer."], "vic": [["Augusta Lorne", "widow and head of the family", "She had the will rewritten last week and told no one what was in it.", "19:10. {V} sets seven place cards on the dining table and takes one away again.", "20:00. {V} rings the solicitor and asks whether one more sentence can go in."], ["Leopold Lorne", "retired shipowner", "He had summoned the family to tell them who would get nothing.", "19:10. {V} takes the family portrait off the mantelpiece and studies one face for a long time.", "20:00. {V} pours two glasses. The second is never touched."]], "sus": [["Jasper Lorne", "the eldest son", "has been counting on the house by the canal for years", "{V} said the house was going to a charity. I had already mortgaged it.", "someone tapping a signet ring against the lamp post", "“That house is mine, everyone knows it!”", "A crumpled valuation report lies on the stones."], ["Isabel Lorne", "the daughter", "learned this afternoon that she has been cut out of the will", "One quarrel, ten years ago. {V} never forgave it and made me read it in black and white.", "someone running a string of pearls through their fingers", "“Ten years, and still you punish me!”", "A single pearl lies in the gutter."], ["Dexter Rowe", "the son-in-law", "runs the family firm and has made the figures look better than they are", "{V} had seen the real books and meant to say so at the table tomorrow, in front of everyone.", "someone who smells of expensive cigars", "“Not tomorrow, not in front of them all!”", "A half-smoked cigar lies on the pavement."], ["Jane Callis", "the housekeeper", "looked after {V} for twelve years and was promised a legacy", "Twelve years, day and night. My name was not even in the new will.", "someone who smells of beeswax polish", "“Twelve years, and I'm not even in it!”", "A silver teaspoon lies on the stones."], ["Florian Lorne", "the grandson", "borrowed money in {V}'s name", "{V} had found the letter from the bank. I asked for a week. I got an hour.", "someone who keeps checking a phone", "“Give me a week, one week!”", "A betting slip from the racecourse lies on the ground."], ["Rupert Tack", "the family lawyer", "has managed the family fortune for thirty years", "{V} wanted an accountant to look at what I had charged in thirty years. My practice would not have survived it.", "someone hugging a briefcase to their chest", "“Thirty loyal years, and now an accountant?”", "A fountain pen with a gold cap lies on the stones."], ["Odette Marchand", "the unknown niece", "turned up last month with a birth certificate", "That certificate is real. {V} called me a fraud and tried to tear it up.", "someone swearing softly in French", "“I am family, whether you like it or not!”", "A train ticket from Paris lies in the gutter."]]}, "v": {"n": "Final Curtain", "tag": "The Night Theatre plays its last night in town. Not everyone makes the curtain call.", "intro": "The Night Theatre is giving its final performance in this town tonight.", "mid": ["20:45. The curtain goes up. {V} stands in the wings, writing names on a list.", "21:30. Interval. {V} slips out through the stage door, the list in a breast pocket.", "23:20. The applause can be heard out in the street. {V} walks the other way."], "vic": [["Maximilian Brandt", "director of the Night Theatre", "After the curtain call he was going to announce who would not be coming on tour.", "19:10. In the dressing room {V} strikes two names off the cast list.", "20:00. {V} has the set moved one more time. Nobody says a word."], ["Cornelia Dove", "owner of the Night Theatre", "She had put the company up for sale and had told no one yet.", "19:10. {V} counts the ticket takings and locks the box office in person.", "20:00. {V} receives a gentleman with a small case in the office. The door closes."]], "sus": [["Lucas Montaine", "the leading man", "heard that {V} wants to give his part to a younger actor", "Twenty years I filled that house. {V} said my face no longer sells tickets.", "someone whose voice carries across the street", "“Twenty years I filled that house!”", "A handkerchief smeared with greasepaint lies on the stones."], ["Ellen Sawyer", "the understudy", "knows every part by heart and has never once been on stage", "{V} had promised me the opening night. Tonight I heard the same promise had been made to three others.", "someone whispering half-lines from the play", "“You promised me!”", "A script full of underlinings lies in the gutter."], ["Benny Quast", "the set builder", "was blamed by {V} when a lighting rig came down", "I had warned them, in writing. {V} put in the report that it was my fault.", "someone who smells of sawdust and glue", "“I warned you, in black and white!”", "A folding rule lies on the pavement."], ["Delphine Arden", "the costume designer", "has been waiting months for her money from {V}", "I had paid for the fabrics myself. {V} laughed and said art does not do invoices.", "someone with a tape measure round their neck", "“Art does do invoices!”", "A pincushion lies in the grass."], ["Miles Seaton", "the playwright", "wrote the play and saw his name vanish from the poster", "My play, word for word. {V} had another name printed above it.", "someone with a sheaf of loose pages under one arm", "“Every word of it is mine!”", "A page of crossed-out lines lies on the stones."], ["Marian Pearce", "the company manager", "signed the loans for the tour", "The company was bankrupt and {V} knew it. My house was the security.", "someone adding up sums out loud", "“My house is on the line, do you understand?”", "An endless strip of adding-machine paper lies on the ground."], ["Sacha Wynd", "the prompter", "hears everything that is said behind the curtain in the dark", "I knew about the fire insurance on the theatre. {V} offered money for my silence and took it back a day later.", "someone who only ever speaks in a whisper", "“I'll whisper it all over town if I must!”", "A pocket torch lies in the gutter, still lit."]]}, "k": {"n": "Fairground Night", "tag": "Last night of the fair. At midnight the lights go out.", "intro": "The fair is in town for its last night.", "mid": ["20:45. {V} goes from stall to stall with a cash box and a notebook.", "21:30. The lights on the big wheel go out. {V} leaves the ground, the cash box under one arm.", "23:20. The carousel music stops. {V} stands alone under a streetlamp, counting."], "vic": [["Aaron Millcombe", "fairground boss", "He handed out the pitches and never forgot who had talked back.", "19:10. {V} walks the ground with a site plan and crosses out two stalls.", "20:00. {V} stands a long time under the big wheel, looking up."], ["Dora Millcombe", "owner of the fair", "She meant to sell the fair after this season and had told no one yet.", "19:10. {V} pins a notice up in the caravan: tomorrow, 8 o'clock, everyone present.", "20:00. An envelope is passed to {V} through the caravan window. {V} hands it back unopened."]], "sus": [["Silas Reeve", "the dodgems boss", "has had the worst pitch on the ground for three years", "Three years behind the toilet wagons. {V} said I should be grateful to be there at all.", "someone with a jingling bag of tokens", "“Three years at the back, and now this!”", "A dodgem token lies on the stones."], ["Mona Lisle", "the fortune teller", "foretold an accident and was blamed by {V} when it happened", "{V} told everyone I brought the fair bad luck. Nobody came into my tent any more.", "someone whose bracelets clink at every step", "“I saw this coming, and so did you!”", "A tarot card lies in the gutter: the Tower."], ["Jack Finch", "the big wheel mechanic", "signed inspection papers that are not true", "{V} had me sign for an axle that has been worn out for years. If it went wrong, mine was the only name on it.", "someone with a tool bag slung over one shoulder", "“It's my name on it, not yours!”", "A nut the size of a fist lies on the pavement."], ["Bibi Cockle", "the candyfloss seller", "borrowed money from {V} for a new stall", "Every week {V} came for half my takings. This week {V} wanted all of it.", "someone who smells of burnt sugar", "“Half was the deal. Half!”", "A pink candyfloss stick lies in the grass."], ["Hugo Starr", "the strongman", "was on the poster for twenty years until {V} took him off it", "{V} said nobody pays any more to watch an old man bend a bar.", "someone with a neck as wide as a doorpost", "“I carried this fair!”", "A horseshoe bent out of shape lies on the stones."], ["Ravi Blue", "the shooting gallery man", "saw {V} count the takings with two sets of books", "I asked for my share, for keeping quiet. {V} threatened to hand my licence back to the council.", "someone with a plush bear under one arm", "“Two sets of books. I saw them both!”", "A cork from a fairground rifle lies in the gutter."], ["Nell Oldham", "the cashier", "has counted {V}'s money for thirty years", "Money went missing and {V} pointed at me. After thirty years. I never took a penny too many.", "someone with a roll of tickets round one wrist", "“Thirty years, and you call me a thief!”", "A torn admission ticket lies on the ground."]]}},SID=["c","t","v","k"];
+Object.assign(T,{"stEy": "Choose your story", "bCode": "Enter a case code", "bArch": "Case archive", "dEy": "Duel", "dH": "Play the same case", "dT": "Every case has a code. Enter someone else's code and you get the same suspects, the same evidence and the same liar, at places in your own neighbourhood. Who cracks it fastest?", "dGo": "Start this case", "dBad": "That case code does not exist. Check it and try again.", "shBtn": "Challenge someone with this case", "shTxt": "Murder Walk: I solved case {c} with {s} in {m} minutes. Same case, your own streets. Can you beat that?", "copied": "Challenge copied.", "copyP": "Copy this challenge:", "aH": "Case archive", "aMed": "Medals per story", "aSolved": "solved", "aLast": "Recent cases", "aNone": "No case solved yet. Your first will appear here.", "aTip": "Tap a case to replay it or pass the code on.", "close": "Close", "dec": ".", "pH": "More stories, a new case every day", "pT": "With Pro you play today's case every day and as many extra cases as you like, wherever you are. You also get three more stories, each with its own suspects and victims: The Will, Final Curtain and Fairground Night. You pay once through Ko-fi and get a code there. Enter it below.", "vfD": ["19:10. {V} draws the curtains, earlier than usual.", "20:00. {V} takes a phone call and says almost nothing back."], "kfD": ["someone who keeps their face turned from the streetlamp", "“I won't let this happen!”", "Nothing is left on the stones but one wet footprint."]});Object.assign(VF,{"Bernard Slater": ["19:10. {V} sticks a lot number on a crate and writes no name beside it.", "20:00. An offer comes to {V}'s door and is turned down, the envelope unopened."], "Margaret Haslett": ["19:10. {V} leafs through an old address book and puts a cross by three names.", "20:00. {V} writes a letter, reads it through and pockets it without a stamp."], "Everett King": ["19:10. {V} slips six rent increases into six envelopes.", "20:00. Someone rings {V}'s bell. The door stays shut and the light goes out."], "Lydia Storm": ["19:10. {V} locks up the pharmacy and takes one prescription book home.", "20:00. {V} dials a number, hangs up and dials it again."], "George Hawthorne": ["19:10. {V} takes the key to the club safe off the ring and tucks it into a breast pocket.", "20:00. A note is waiting for {V} in the clubhouse. {V} reads it and tears it in four."], "Philippa Ryder": ["19:10. {V} places a ring in the shop window that was not there this morning.", "20:00. Someone stands a long while at {V}'s shop window and walks on without ringing."], "Martin Shearman": ["19:10. {V} takes one file from the drawer and lays it on top of the pile.", "20:00. {V} rings a former pupil. The call lasts less than a minute."], "Greta Falk": ["19:10. {V} spreads the leases across the table and sets two aside.", "20:00. A tractor crawls past {V}'s house and turns at the end of the lane."]});Object.assign(KF,{"Elizabeth Cramer": ["someone with flour on both sleeves", "“Three generations, and you sweep it away!”", "A torn bread bag lies on the pavement."], "Jeremy Dunn": ["someone toying with a bunch of labelled keys", "“That money is gone!”", "A business card lies in the gutter, one corner soaked."], "Anne Forrest": ["someone carrying a doctor's bag", "“Withdraw it, and then we talk!”", "A blank prescription slip lies on the ground."], "Dan Skipper": ["someone who smells of tar and diesel", "“Then I'm the one in chains!”", "A length of tarred rope lies on the stones."], "Rose Winter": ["someone with pruning shears on their belt", "“You are not taking my shop!”", "A snapped white lily lies in the gutter."], "Clive Hooker": ["someone with ink stains on their fingers", "“Sixteen years, and this is my thanks?”", "A till receipt covered in pencil marks lies on the ground."], "Vera Black": ["someone who smells of hairspray", "“One letter, and it all shut down!”", "A comb with a broken tooth lies on the pavement."], "Abe Thornton": ["someone with soil under their fingernails", "“I never deserved that!”", "A reel of garden wire lies in the grass."], "Hannah Brewer": ["someone with chalk on their fingers", "“Behind my back, after all these years!”", "A red pen without its cap lies on the stones."], "Stuart Mason": ["someone with a pager on their belt", "“This has to end somewhere!”", "A loose uniform button lies in the road."]});
+SID.forEach(id=>{const s=STORIES[id];if(!s.sus)return;s.pool=s.sus.map(x=>[x[0],x[1]]);s.sus.forEach(x=>{MOT[x[0]]=[[x[2],x[3]]];KF[x[0]]=[x[4],x[5],x[6]]});s.vic.forEach(x=>{VF[x[0]]=[x[3],x[4]]})});
+let NEXT=LS.get("ss_story","c"),RUN="c";if(!STORIES[NEXT])NEXT="c";
+const HZ=(location.hash||"").match(/z=([A-Za-z0-9-]+)/);
+function canStory(id){return id==="c"||isPro()}
+function pickS(){return canStory(NEXT)?NEXT:"c"}
+function codeOf(sid,par,seed){return sid.toUpperCase()+(par<=45?"S":"L")+"-"+(seed>>>0).toString(36).toUpperCase()}
+function parseCode(v){const c=proNorm(v);if(c.length<3||c.length>9)return null;const sid=c[0].toLowerCase(),seed=parseInt(c.slice(2),36);
+  if(!STORIES[sid]||!/[SL]/.test(c[1])||!(seed>=0)||seed>4294967295)return null;return{sid,short:c[1]==="S",seed}}
+function setLen(short){const b=document.querySelectorAll("#len button")[short?0:1];if(b)b.click()}
+function storyUI(){
+  if(!canStory(NEXT))NEXT="c";const b=prof.best||{};
+  $("#stories").innerHTML=SID.map(id=>'<button type="button" data-id="'+id+'" aria-pressed="'+(id===NEXT)+'">'+(canStory(id)?"":"🔒 ")+esc(STORIES[id].n)+(b[id]?" "+"★".repeat(b[id]):"")+'</button>').join("");
+  $("#stTag").textContent=STORIES[NEXT].tag}
+$("#stories").onclick=e=>{const b=e.target.closest("button");if(!b)return;const id=b.dataset.id;if(!canStory(id)){proSheet();return}NEXT=id;LS.set("ss_story",id);storyUI()};
+$("#bGps").onclick=()=>{if(locked())return proSheet();GRP=null;RUN=pickS();startGps(hashStr(today()))};
+$("#bRandom").onclick=()=>{if(locked())return proSheet();GRP=null;RUN=pickS();startGps(Math.floor(Math.random()*4e9))};
+$("#bDemo").onclick=()=>{GRP=null;RUN=pickS();const w=demoWorld();build(Math.floor(Math.random()*4e9),"demo",w.pois,w.ways,null)};
+function codeSheet(pre){
+  sheet('<div class="eyebrow">'+T.dEy+'</div><h2>'+T.dH+'</h2><p>'+T.dT+'</p><input class="inp" id="dCode" autocomplete="off" autocapitalize="characters" spellcheck="false" aria-label="'+T.bCode+'" value="'+esc(pre||"")+'"><button type="button" class="btn" id="dOk">'+T.dGo+'</button><p class="note" id="dMsg" style="color:#a5392c"></p><button type="button" class="btn ghost dk" id="shX">'+T.cancel+'</button>');
+  const go=()=>{const gm=/g=([A-Za-z0-9.%~_!'()*-]+)/.exec($("#dCode").value);if(gm){grpOpen(gm[1]);return}const p=parseCode($("#dCode").value);if(!p){$("#dMsg").textContent=T.dBad;buzz(120);return}if(locked()||!canStory(p.sid)){proSheet();return}closeSheet();setLen(p.short);GRP=null;RUN=p.sid;startGps(p.seed)};
+  $("#sheetBody").onclick=e=>{if(e.target.id==="shX")closeSheet();else if(e.target.id==="dOk")go()};
+  $("#dCode").onkeydown=e=>{if(e.key==="Enter")go()}}
+$("#bCode").onclick=()=>codeSheet("");
+function shareCase(code,stars,min){
+  const url=location.origin+location.pathname+"#z="+code,txt=T.shTxt.replace("{c}",code).replace("{s}","★".repeat(stars)).replace("{m}",min),all=txt+" "+url;
+  if(navigator.share){navigator.share({text:txt,url:url}).catch(()=>{});return}
+  try{navigator.clipboard.writeText(all).then(()=>toast(T.copied),()=>prompt(T.copyP,all))}catch(e){prompt(T.copyP,all)}}
+function logCase(stars,min){
+  if(G.mode!=="gps")return;const sid=STORIES[G.story]?G.story:"c";
+  prof.best=prof.best||{};prof.cnt=prof.cnt||{};prof.log=prof.log||[];
+  prof.best[sid]=Math.max(prof.best[sid]||0,stars);prof.cnt[sid]=(prof.cnt[sid]||0)+1;
+  prof.log.unshift({d:today(),s:sid,c:G.code||codeOf(sid,G.par,G.seed),st:stars,m:Math.round(min),km:Math.round(G.dist/100)/10,v:G.c.victim[0]});
+  if(prof.log.length>40)prof.log.length=40}
+function archSheet(){
+  const log=prof.log||[],b=prof.best||{},n=prof.cnt||{},st=k=>"★".repeat(k||0)+"☆".repeat(3-(k||0));
+  sheet('<h2>'+T.aH+'</h2><div class="eyebrow">'+T.aMed+'</div><div class="book" style="grid-template-columns:1fr 1fr">'+SID.map(id=>'<div'+(n[id]?'':' class="no"')+'><b>'+esc(STORIES[id].n)+'</b><span class="r3">'+st(b[id])+'</span><span>'+(n[id]||0)+' '+T.aSolved+'</span></div>').join("")+'</div><div class="eyebrow">'+T.aLast+'</div><div class="list">'+
+    (log.map(x=>'<button type="button" class="sus" data-c="'+esc(x.c)+'"><b>'+esc(x.v)+'</b><small>'+esc((STORIES[x.s]||STORIES.c).n)+' · '+esc(String(x.d).split("-").reverse().join("-"))+' · '+x.m+' min · '+String(x.km).replace(".",T.dec)+' km</small><div class="tags"><i>'+st(x.st)+'</i><i>'+esc(x.c)+'</i></div></button>').join("")||'<p class="note" style="color:#6a6250">'+T.aNone+'</p>')+
+    '</div>'+(log.length?'<p class="note" style="color:#6a6250">'+T.aTip+'</p>':'')+'<button type="button" class="btn ghost dk" id="shX">'+T.close+'</button>');
+  $("#sheetBody").onclick=e=>{if(e.target.id==="shX"){closeSheet();return}const r=e.target.closest("[data-c]");if(r)codeSheet(r.dataset.c)}}
+$("#bArch").onclick=archSheet;
+
+/* ---------- groepsspel zonder server: samen of teams tegen elkaar ---------- */
+Object.assign(T,{"bGrp": "Group case", "gH": "One case, several phones", "gT": "You create the case right here and send the link to the others. Everyone gets the same case at the same places. Every player needs Pro.", "gMode": "Game type", "gModeS": "Together", "gModeV": "Team against team", "gCnt": "Number of players", "gPls": "players", "gYou": "You are", "gYouS": "you", "gPl": "Player", "gTeam": "Team", "gOf": "of", "gWe": "our group", "gMake": "Create the case", "gJoinH": "You have been invited", "gJoin": "Join", "gInv": "Send the invitation", "gInvTxt": "Murder Walk: join our group case. Open this link on your phone and pick your place in the group.", "gCopied": "Copied.", "gBadL": "That invitation is not valid. Ask for the link again.", "gFar": "You are far from this group's starting point. The leads are over there.", "gRuleS": "The eight leads are shared out. You can only open your own. Pass the lead codes to each other and solve the case together.", "gRuleV": "Each team holds four leads. Trade lead codes with the other team, honestly or not: you may hand over a false lead. If you don't trust it, walk their leads yourself once your own four are in. A wrong accusation costs five minutes.", "gLockS": "This lead belongs to player {n}. Ask for the lead code.", "gLockV": "This lead belongs to team {n}. Trade for it, or finish your own leads first.", "gRadar": "Your leads are in. Swap codes with the others.", "gAllMine": "Your leads are in. Open your notebook, Group tab.", "gCodeEy": "Lead code for your group", "gCodeV": "Share with the other team from your notebook, Group tab: true or false.", "gTab": "Group", "gIn": "Enter a lead code", "gAdd": "Add", "gBadC": "That lead code does not belong to this case.", "gOwn": "You already found that lead yourself.", "gAdded": "Lead added.", "gGot": "Leads received", "gNoGot": "Nothing received yet.", "gTap": "Tap a received lead to mark it true or a lie.", "gMay": "may be false", "gOkC": "checked, it holds", "gLieC": "checked, this was false", "gTrue": "true", "gLie": "lie", "gMine": "Your leads to share", "gNoMine": "No lead found yet.", "gShare": "Share this lead", "gFake": "Make a false lead", "gFakeH": "False lead", "gFakeT": "Whoever enters this code sees this. It cannot be told apart from the real thing.", "gFakeS": "Share the false lead", "gFakeN": "Another lie", "gBackG": "Back to Group", "gMsg": "Murder Walk, lead at {p}: code {c}", "gAll": "All eight leads", "gStOpen": "still open", "gStDone": "found", "gStGot": "received", "gFree": "Release all leads", "gFreeQ": "Release all leads?", "gFreeT": "Has someone dropped out? From now on you can open every lead yourself.", "gBack": "Back to the notebook", "gResBtn": "Share your result", "gRes": "Murder Walk, case {c}: {w} solved it in {m} minutes with {s}, done at {t}.", "gPen": "Wrong. Five minutes' penalty.", "alibi": "{N} was with me all evening. Couldn't have done it."});
+Object.assign(T,{"gT": "You create the case right here and send the link to the others. Everyone gets the same case at the same places. The others join for free, on up to 10 phones.", "gPair": "you share player {n}'s leads", "gpH": "Play as a group", "gpT": "A group pass lets you create group cases for {u} hours, for up to {n} phones. Only you need the pass. The others join for free through your invitation. You buy the pass through Ko-fi and get a code there. The {u} hours start the moment you enter the code below.", "gpBtn": "Buy a group pass", "gpOn": "Group pass active, {h} hours left.", "gpOk": "Group pass active. You have {u} hours.", "pExp": "That code has expired or been withdrawn.", "pUsedC": "That group code has already been used on this device.", "pWait": "Fetching the codes…", "pNoNet": "The codes could not be fetched. Check your connection and try again."});
+let GRP=null;
+const HG=(location.hash||"").match(/g=([A-Za-z0-9.%~_!'()*-]+)/),B32="ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+const b36=(n,w)=>Math.round(n).toString(36).padStart(w,"0");
+function gotI(i){return !!(G&&G.grp&&G.grp.got[i]!=null)}
+function myLeft(){const g=G.grp;return G.st.filter((s,i)=>g.own[i]===g.me&&!s.done).length}
+function canOpen(s){const g=G&&G.grp;if(!g||g.free)return true;const i=G.st.indexOf(s);if(i<0||g.own[i]===g.me)return true;return g.m==="V"&&myLeft()===0}
+function ownTag(i){const g=G.grp;return g.m==="V"?T.gTeam+" "+"AB"[g.own[i]]:T.gPl+" "+(g.own[i]+1)}
+function lockHint(s){const g=G.grp,i=G.st.indexOf(s);return(g.m==="V"?T.gLockV:T.gLockS).replace("{n}",g.m==="V"?"AB"[g.own[i]]:g.own[i]+1)}
+function mkGrp(seed){const p=shuffle([0,1,2,3,4,5,6,7],rngOf(seed^0x2545f491)),own=[];const k=Math.min(GRP.n,8);p.forEach((i,j)=>own[i]=j%k);return{m:GRP.m,n:GRP.n,me:GRP.me%k,ph:GRP.me,own,got:{},tm:{},free:false}}
+function meTxt(){const g=G.grp;return g.m==="V"?T.gModeV+" · "+T.gTeam.toLowerCase()+" "+"AB"[g.me]:T.gModeS+" · "+T.gPl.toLowerCase()+" "+((g.ph==null?g.me:g.ph)+1)+" "+T.gOf+" "+g.n+(g.ph>=8?" · "+T.gPair.replace("{n}",g.me+1):"")}
+function glink(){const g=G.grp,o=G.origin;return location.origin+location.pathname+"#g="+[(G.story||"c")+(G.par<=45?"s":"l")+g.m.toLowerCase()+g.n.toString(36),(G.seed>>>0).toString(36),b36(o.lat*1e5+9e6,5),b36(o.lon*1e5+18e6,5),G.st.map(s=>b36(s.x+3000,3)+b36(s.y+3000,3)+b36(PRI.indexOf(s.type),1)).join(""),encodeURIComponent(G.st.map(s=>(s.nm||"").replace(/[~.]/g," ")).join("~"))].join(".")}
+function parseG(v){
+  const p=String(v).split(".");if((p.length!==5&&p.length!==6)||p[4].length!==56||p[0].length!==4)return null;
+  const h=p[0].toLowerCase(),sid=h[0],n=parseInt(h[3],36);if(!STORIES[sid]||!/[sl]/.test(h[1])||!/[sv]/.test(h[2])||!(n>=2&&n<=10))return null;
+  const seed=parseInt(p[1],36),lat=(parseInt(p[2],36)-9e6)/1e5,lon=(parseInt(p[3],36)-18e6)/1e5;if(!(seed>=0)||seed>4294967295||!(Math.abs(lat)<=90)||!(Math.abs(lon)<=180))return null;
+  const st=[];for(let i=0;i<8;i++){const q=p[4].substr(i*7,7),ty=PRI[parseInt(q[6],36)],x=parseInt(q.substr(0,3),36)-3000,y=parseInt(q.substr(3,3),36)-3000;if(!ty||!(Math.abs(x)<=3000)||!(Math.abs(y)<=3000))return null;st.push({x,y,type:ty})}
+  if(p[5]){try{decodeURIComponent(p[5]).split("~").forEach((nm,i)=>{if(st[i])st[i].name=nm.slice(0,40)})}catch(e){}}
+  return{sid,short:h[1]==="s",m:h[2].toUpperCase(),n:h[2]==="v"?2:n,seed,o:[lat,lon],st}}
+function shareTxt(txt,url){const all=url?txt+" "+url:txt;
+  if(navigator.share){navigator.share(url?{text:txt,url:url}:{text:txt}).catch(()=>{});return}
+  try{navigator.clipboard.writeText(all).then(()=>toast(T.gCopied),()=>prompt(T.copyP,all))}catch(e){prompt(T.copyP,all)}}
+function invite(){if(G&&G.grp&&G.origin)shareTxt(T.gInvTxt,glink())}
+function grpBrief(){const b=$("#bInv");b.hidden=!(G.grp&&G.origin);if(!G.grp)return;
+  $("#bfNo").textContent+=" · "+meTxt();$("#bfText").textContent+=" "+(G.grp.m==="V"?T.gRuleV:T.gRuleS)}
+$("#bInv").onclick=invite;
+/* spoorcodes: drie tekens, echt en vals zien er hetzelfde uit */
+function clueCode(i,v){const k=hashStr("k"+G.seed)%64,x=((i*8+v)*37+k)%64,n=x*512+hashStr(G.seed+"|"+x)%512;return B32[n>>10]+B32[n>>5&31]+B32[n&31]}
+function readCode(s){const c=String(s||"").toUpperCase().replace(/[^A-Z0-9]/g,"");if(c.length!==3)return null;let n=0;for(const ch of c){const j=B32.indexOf(ch);if(j<0)return null;n=n*32+j}
+  const x=n>>9,k=hashStr("k"+G.seed)%64;if(hashStr(G.seed+"|"+x)%512!==(n&511))return null;const q=((x-k+64)*45)%64,i=q>>3,v=q&7;return clueOf(i,v)?{i,v}:null}
+function clueOf(i,v){const s=G.st[i],c=G.c;if(!s)return null;
+  if(s.kind==="ev"){const e=c.ev[s.idx];if(!v)return{t:e.title,x:e.text};const o=TR[e.trait].filter(q=>q!==e.val)[v-1];if(!o)return null;const z=evText(e.trait,o);return{t:z[0],x:z[1]}}
+  const w=c.wit[s.idx];if(!v)return{t:s.persona,x:w.text};let x;
+  if(v<7)x=T.alibi.replace("{N}",c.sus[v-1].name);else{const ks=Object.keys(TR),h=hashStr(G.seed+"f"+i),t=ks[h%ks.length];x=witText(t,TR[t][(h>>>8)%TR[t].length])}
+  return x===w.text?null:{t:s.persona,x}}
+function fakeV(i){const o=[];for(let v=1;v<8;v++)if(clueOf(i,v))o.push(v);if(!o.length)return 0;if(o.includes(7)&&Math.random()<.4)return 7;return o[Math.floor(Math.random()*o.length)]}
+function codeHtml(i){return G.grp.m==="V"?'<p class="note" style="color:#6a6250;margin-top:8px">'+T.gCodeV+'</p>':'<div class="clue" style="border-style:dashed;margin-top:8px"><em>'+T.gCodeEy+'</em><b style="font-size:26px;letter-spacing:.18em">'+clueCode(i,0)+'</b></div>'}
+function gotCard(i,tap){const g=G.grp,s=G.st[i],q=clueOf(i,g.got[i]),V2=g.m==="V",chk=s.done?(g.got[i]?T.gLieC:T.gOkC):V2?T.gMay:"",m=g.tm[i]||0;
+  return'<'+(tap?'button type="button" data-g="'+i+'"':'div')+' class="clue'+(s.kind==="wit"?" wit":"")+' m'+m+'"><em>'+esc(s.name)+(s.kind==="wit"?" · "+esc(q.t):"")+(chk?" · "+chk:"")+(m===1?" · "+T.gTrue:m===2?" · "+T.gLie:"")+'</em>'+(s.kind==="ev"?'<b>'+esc(q.t)+'</b>'+esc(q.x):"„"+esc(q.x)+"”")+'</'+(tap?'button':'div')+'>'}
+function gotHtml(tap){const ks=Object.keys(G.grp.got).map(Number).sort((a,b)=>a-b);
+  return'<div class="eyebrow">'+T.gGot+' · '+ks.length+'</div><div class="list">'+(ks.map(i=>gotCard(i,tap)).join("")||'<p class="note" style="color:#6a6250">'+T.gNoGot+'</p>')+'</div>'}
+function grpSheet(msg){
+  const g=G.grp,V2=g.m==="V",done=G.st.map((s,i)=>i).filter(i=>G.st[i].done);
+  sheet('<h2>'+T.gTab+'</h2><p><b>'+esc(meTxt())+'.</b> '+(V2?T.gRuleV:T.gRuleS)+'</p>'+
+    '<div class="eyebrow">'+T.gIn+'</div><input class="inp" id="gIn" maxlength="3" autocomplete="off" autocapitalize="characters" spellcheck="false" aria-label="'+T.gIn+'"><button type="button" class="btn" id="gAdd">'+T.gAdd+'</button><p class="note" id="gMsg" style="color:#a5392c">'+(msg||"")+'</p>'+
+    gotHtml(true)+(Object.keys(g.got).length?'<p class="note" style="color:#6a6250">'+T.gTap+'</p>':'')+
+    '<div class="eyebrow">'+T.gMine+'</div><div class="list">'+(done.map(i=>{const s=G.st[i],q=clueOf(i,0);return'<div class="clue'+(s.kind==="wit"?" wit":"")+'"><em>'+esc(s.name)+(s.kind==="wit"?" · "+esc(q.t):"")+'</em>'+(s.kind==="ev"?'<b>'+esc(q.t)+'</b>'+esc(q.x):"„"+esc(q.x)+"”")+'<b style="font-size:22px;letter-spacing:.18em;margin-top:6px">'+clueCode(i,0)+'</b><div class="grid2" style="margin-top:6px"><button type="button" class="btn ghost dk sm" data-sh="'+i+'">'+T.gShare+'</button>'+(V2?'<button type="button" class="btn ghost dk sm" data-fk="'+i+'">'+T.gFake+'</button>':'')+'</div></div>'}).join("")||'<p class="note" style="color:#6a6250">'+T.gNoMine+'</p>')+'</div>'+
+    '<div class="eyebrow">'+T.gAll+'</div><div class="list">'+G.st.map((s,i)=>'<div class="sus"><b>'+esc(s.name)+'</b><small>'+esc(ownTag(i))+(g.own[i]===g.me?" ("+T.gYouS+")":"")+' · '+(s.done?T.gStDone:gotI(i)?T.gStGot:T.gStOpen)+'</small></div>').join("")+'</div>'+
+    (G.origin?'<button type="button" class="btn ghost dk" id="gInv">'+T.gInv+'</button>':'')+'<button type="button" class="btn" id="gBack">'+T.gBack+'</button>');
+  const add=()=>{const r=readCode($("#gIn").value);if(!r){$("#gMsg").textContent=T.gBadC;buzz(120);return}if(G.st[r.i].done){$("#gMsg").textContent=T.gOwn;return}g.got[r.i]=r.v;save();beep(660,.2);grpSheet();toast(T.gAdded)};
+  $("#sheetBody").onclick=e=>{const b=e.target.closest("button");if(!b)return;
+    if(b.id==="gBack")noteSheet("c");else if(b.id==="gAdd")add();else if(b.id==="gInv")invite();
+    else if(b.dataset.g){g.tm[b.dataset.g]=((g.tm[b.dataset.g]||0)+1)%3;save();const y=$("#sheetBody").scrollTop;grpSheet();$("#sheetBody").scrollTop=y}
+    else if(b.dataset.sh)shareTxt(T.gMsg.replace("{p}",G.st[b.dataset.sh].name).replace("{c}",clueCode(+b.dataset.sh,0)));
+    else if(b.dataset.fk)fakeSheet(+b.dataset.fk)};
+  $("#gIn").onkeydown=e=>{if(e.key==="Enter")add()}}
+function fakeSheet(i){const v=fakeV(i);if(!v)return grpSheet();const q=clueOf(i,v),s=G.st[i],code=clueCode(i,v);
+  sheet('<div class="eyebrow">'+esc(s.name)+'</div><h2>'+T.gFakeH+'</h2><p>'+T.gFakeT+'</p><div class="clue'+(s.kind==="wit"?" wit":"")+'"><em>'+esc(s.name)+(s.kind==="wit"?" · "+esc(q.t):"")+'</em>'+(s.kind==="ev"?'<b>'+esc(q.t)+'</b>'+esc(q.x):"„"+esc(q.x)+"”")+'<b style="font-size:26px;letter-spacing:.18em;margin-top:6px">'+code+'</b></div><button type="button" class="btn" id="fkS">'+T.gFakeS+'</button><button type="button" class="btn ghost dk" id="fkN">'+T.gFakeN+'</button><button type="button" class="btn ghost dk" id="gBack">'+T.gBackG+'</button>');
+  $("#sheetBody").onclick=e=>{const b=e.target.id;if(b==="gBack")grpSheet();else if(b==="fkN")fakeSheet(i);else if(b==="fkS")shareTxt(T.gMsg.replace("{p}",s.name).replace("{c}",code))}}
+function shareRes(stars,min){const g=G.grp,d=new Date();shareTxt(T.gRes.replace("{c}",G.code).replace("{w}",g.m==="V"?T.gTeam+" "+"AB"[g.me]:T.gWe).replace("{m}",min).replace("{s}","★".repeat(stars)).replace("{t}",String(d.getHours()).padStart(2,"0")+":"+String(d.getMinutes()).padStart(2,"0")))}
+/* aanmaken en meedoen */
+function seg(id,opts,cur){return'<div class="seg" id="'+id+'" style="grid-template-columns:repeat('+Math.min(opts.length,3)+',1fr)">'+opts.map(o=>'<button type="button" data-v="'+o[0]+'" aria-pressed="'+(String(o[0])===String(cur))+'" style="color:#1b2233;border-color:'+(String(o[0])===String(cur)?"#a5392c":"#c9bfa6")+'">'+o[1]+'</button>').join("")+'</div>'}
+function grpForm(cfg,join){
+  const V2=cfg.m==="V",who=V2?[[0,T.gTeam+" A"],[1,T.gTeam+" B"]]:Array.from({length:cfg.n},(x,i)=>[i,T.gPl+" "+(i+1)]);if(cfg.me>=who.length)cfg.me=0;
+  sheet('<div class="eyebrow">'+T.bGrp+'</div><h2>'+(join?T.gJoinH:T.gH)+'</h2><p>'+(join?esc(STORIES[cfg.sid].n)+" · "+(V2?T.gModeV:T.gModeS+" · "+cfg.n+" "+T.gPls)+". ":T.gT+" ")+(V2?T.gRuleV:T.gRuleS)+'</p>'+
+    (join?'':'<div class="eyebrow">'+T.gMode+'</div>'+seg("gM",[["S",T.gModeS],["V",T.gModeV]],cfg.m)+(V2?'':'<div class="eyebrow">'+T.gCnt+'</div>'+seg("gN",[2,3,4,5,6,7,8,9,10].map(n=>[n,n]),cfg.n)))+
+    '<div class="eyebrow">'+T.gYou+'</div>'+seg("gW",who,cfg.me)+
+    '<button type="button" class="btn" id="gGo">'+(join?T.gJoin:T.gMake)+'</button><button type="button" class="btn ghost dk" id="shX">'+T.cancel+'</button>');
+  $("#sheetBody").onclick=e=>{const b=e.target.closest("button");if(!b)return;const p=b.parentNode.id;
+    if(b.id==="shX")closeSheet();
+    else if(p==="gM"){cfg.m=b.dataset.v;if(cfg.m==="V")cfg.n=2;else if(cfg.n<2)cfg.n=4;grpForm(cfg,join)}
+    else if(p==="gN"){cfg.n=+b.dataset.v;grpForm(cfg,join)}
+    else if(p==="gW"){cfg.me=+b.dataset.v;grpForm(cfg,join)}
+    else if(b.id==="gGo"){if(!join&&!groupLeft()){proSheet("groep");return}closeSheet();
+      if(join){setLen(cfg.short);RUN=cfg.sid;GRP={m:cfg.m,n:cfg.n,me:cfg.me,o:cfg.o,st:cfg.st};startGps(cfg.seed)}
+      else{RUN=pickS();GRP={m:cfg.m,n:cfg.m==="V"?2:cfg.n,me:cfg.me};startGps(Math.floor(Math.random()*4e9))}}}}
+function grpOpen(v){const c=parseG(v);if(!c){toast(T.gBadL);return false}c.me=0;grpForm(c,true);return true}
+$("#bGrp").onclick=()=>{if(!groupLeft())return proSheet("groep");grpForm({m:"S",n:4,me:0},false)};
+
+home();if(HG)grpOpen(HG[1]);else if(HZ)codeSheet(HZ[1]);
 })();
 </script>
 <script>
 /* ===== PRO-INSTELLINGEN: alleen hier aanpassen ===== */
 window.SS_PRO={
-  url:"https://ko-fi.com/s/aa277497a2",  // link naar je Ko-fi-product
-  price:"€ 3,99",                    // staat op de knop
-  hash:1659528216                    // hoort bij de toegangscode. Nieuwe code? Open de pagina met #code=JOUWCODE en plak het getal hier.
+  url:"https://ko-fi.com/s/aa277497a2",  // link naar je Ko-fi-product voor Pro
+  price:"€ 3,99",                    // staat op de Pro-knop
+  hash:1659528216,                   // je oude Pro-code blijft hiermee werken. Regel weghalen = oude code kan niet meer nieuw worden ingevoerd (wie hem al invoerde, blijft Pro).
+  groep:{
+    url:"https://ko-fi.com/s/dc0dfbafe5",  // link naar je Ko-fi-product voor de groepspas
+    price:"€ 9,99",                  // staat op de groepsknop
+    uren:48,                         // zo lang geldt een groepspas na het invoeren
+    max:10                           // aantal telefoons dat in de uitleg staat
+  }
 };
+// Nieuwe codes maak je met codes.html en zet je in codes.json. Dit bestand hoef je daarvoor niet aan te raken.
 </script>
 <script>(function(){var l=null,h=(location.hash||"").replace("#","");
 if(h==="nl"||h==="en")l=h;
 if(!l){try{l=localStorage.getItem("ss_lang")||localStorage.getItem("lr_lang")}catch(e){}}
-if(l!=="nl"&&l!=="en")l=/moordwandeling/i.test(location.hostname)?"nl":"en";
+if(l!=="nl"&&l!=="en")l=/moordwandeling/i.test(location.hostname)?"nl":/murderwalk/i.test(location.hostname)?"en":/^nl/i.test(navigator.language||"")?"nl":"en";
 document.documentElement.lang=l;document.title=l==="nl"?"Moordwandeling":"Murder Walk";
 document.getElementById("root").innerHTML=document.getElementById("h-"+l).textContent;
 ["a-","b-"].forEach(function(k){var s=document.createElement("script");s.textContent=document.getElementById(k+l).textContent;document.body.appendChild(s)});
-if(h.indexOf("code=")===0)prompt("SS_PRO.hash:",hashStr(decodeURIComponent(h.slice(5)).toUpperCase().replace(/[^A-Z0-9]/g,"")));
 var b=document.getElementById("lang");if(b)b.onclick=function(){var n=l==="nl"?"en":"nl";try{localStorage.setItem("ss_lang",n)}catch(e){}location.hash=n;location.reload()};
 })();</script>
 </body>
