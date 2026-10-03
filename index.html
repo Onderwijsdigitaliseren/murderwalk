@@ -634,7 +634,7 @@ const PLAY={
 };
 function puzzle(t){
   const rare=t.id!=null,wit=rare||t.kind==="wit";walkTo=null;
-  const key=rare?"lamp":wit?["seq","code","cipher","radio","lamp"][(t.idx+G.seed)%5]:["tiles","dust","code"][(t.idx+G.seed)%3],I=INFO[key];
+  const key=mgKey(t),I=(rare&&T.mgRare[key])||INFO[key];
   sheet('<div class="eyebrow">'+(rare?"Een zeldzame schaduw":esc(t.name)+(wit?" · "+esc(t.persona):" · bewijs"))+'</div><h2>'+I[0]+'</h2><p id="mgHint">'+I[1]+'</p><div id="mgbox"></div><div id="mgOut"></div><button type="button" class="btn ghost dk" id="mgSkip">Later terugkomen</button>');
   $("#sheet").dataset.lock="1";$("#sheetBody").onclick=null;
   $("#mgSkip").onclick=()=>{delete $("#sheet").dataset.lock;closeSheet()};
@@ -1041,6 +1041,70 @@ function xHtml(){const X=G&&G.x;if(!X)return"";let h="";
   if(X.evt&&X.evt.state==="won"){const z=evText(X.evt.t,X.evt.v);h+='<div class="clue"><em>'+T.evTag+'</em><b>'+esc(z[0])+'</b>'+esc(z[1])+'</div>'}
   if(X.iv&&X.iv.q){const s=G.c.sus[X.iv.s];h+='<div class="clue wit"><em>'+T.ivEy+' · '+esc(s.name)+' · '+T.ivRuleS+'</em>'+T.ivQ[X.iv.q]+' „'+esc(ivAns(X.iv,X.iv.q))+'”</div>'}
   return h?'<div class="eyebrow">'+T.xNote+'</div><div class="list">'+h+'</div>':""}
+
+/* ---------- meer en pittiger minispellen ---------- */
+Object.assign(T,{"mgI": {"code": ["Een cijferslot", "Kraak de code: vier verschillende cijfers van 1 tot 6. Na elke poging zie je hoeveel cijfers op de juiste plek staan en hoeveel erin zitten op een andere plek. Je hebt acht pogingen."], "cipher": ["Een briefje in geheimschrift", "Twee ringen. Ring 1 verschuift de eerste, derde en vijfde letter, ring 2 de letters ertussen. Draai aan allebei tot er een woord staat."], "vault": ["Een kluis met aantekeningen", "Iemand heeft zijn pogingen opgeschreven. Leid de code van drie verschillende cijfers af uit die aantekeningen."], "pairs": ["Verscheurde briefjes", "Zoek de zes paren. Je mag twaalf keer twee briefjes omdraaien."], "pick": ["Een slot op de deur", "Tik op het vlak als het lichtje in de gouden zone staat. Vijf pennen. Mis je, dan springt er één terug."], "odd": ["Eén teken klopt niet", "Tussen al deze tekens zit er één die afwijkt. Tik hem aan voordat de tijd om is. Vier rondes. Een fout kost je een ronde."]}, "mgRare": {"pick": ["De schaduw glipt weg", "Tik op het vlak als het lichtje in de gouden zone staat. Vijf keer raak. Mis je, dan ben je er één kwijt."], "odd": ["De schaduw verstopt zich", "Tussen al deze tekens zit er één die afwijkt. Tik hem aan voordat de tijd om is. Vier rondes. Een fout kost je een ronde."]}, "mgTry": "Probeer", "mgLeft": "Pogingen over: {n}", "mgNew": "Het slot springt terug. Er zit een nieuwe code op.", "mgFb": "{a} op de juiste plek · {b} op een andere plek", "mgR1": "Ring 1", "mgR2": "Ring 2", "mgWord": "Dit is het woord", "mgNoWord": "Dat is geen woord. Draai verder.", "mgOpen": "Open de kluis", "mgNo": "De kluis blijft dicht.", "mgVnew": "Drie keer mis. Er liggen nieuwe aantekeningen.", "mgV": ["niets goed", "{n} goed, op de juiste plek", "{n} goed, op de verkeerde plek"], "mgTurns": "Beurten over: {n}", "mgShuf": "Te veel beurten. De briefjes worden opnieuw geschud.", "mgRound": "Ronde {n} van 4", "mgW": ["ALIBI", "MOTIEF", "GETUIGE", "LEUGEN", "SCHULD", "DADER", "BEWIJS", "WRAAK", "ERFENIS", "CHANTAGE", "VERDACHTE", "SCHADUW", "LANTAARN", "GEHEIM", "SLEUTEL"]});Object.assign(INFO,T.mgI);
+let mgDbg=null;
+function mgKey(t){
+  if(t.id!=null)return["lamp","pick","odd"][(Math.max(0,G.rare.indexOf(t))+G.seed)%3];
+  const r=rngOf(G.seed^0x51f15e),ev=shuffle(["tiles","dust","vault","pairs","odd","code"],r).slice(0,3),w=shuffle(["seq","code","cipher","radio","lamp","pairs","vault","pick"].filter(k=>!ev.includes(k)),r);
+  return t.kind==="ev"?ev[t.idx%3]:w[t.idx%w.length]}
+Object.assign(PLAY,{
+  code(o){let sec,cur,left;
+    const init=()=>{sec=shuffle([1,2,3,4,5,6],Math.random).slice(0,4);cur=[1,2,3,4];left=8;mgDbg={sec};
+      o.box.innerHTML='<div class="dig">'+cur.map((d,i)=>'<button type="button" data-d="'+i+'" style="width:48px">'+d+'</button>').join("")+'</div><button type="button" class="btn" id="cdTry">'+T.mgTry+'</button><p class="note" id="cdL" style="color:#6a6250">'+T.mgLeft.replace("{n}",left)+'</p><div class="hist" id="cdH"></div>';
+      o.box.querySelector(".dig").onclick=e=>{const b=e.target.closest("button");if(!b)return;const i=+b.dataset.d;cur[i]=cur[i]%6+1;b.textContent=cur[i];beep(300,.05)};
+      $("#cdTry").onclick=()=>{const a=cur.filter((d,i)=>d===sec[i]).length,b=sec.filter((d,i)=>cur[i]!==d&&cur.includes(d)).length;
+        if(a===4)return o.done();left--;beep(200,.1);
+        $("#cdH").insertAdjacentHTML("afterbegin",'<div>'+cur.map(d=>'<span class="g0">'+d+'</span>').join("")+' <small style="color:#1b2233">'+T.mgFb.replace("{a}",a).replace("{b}",b)+'</small></div>');
+        if(left<=0){toast(T.mgNew);buzz(150);init()}else $("#cdL").textContent=T.mgLeft.replace("{n}",left)}};
+    init()},
+  cipher(o){const ws=T.mgW,w=ws[Math.floor(Math.random()*ws.length)],k=[3+Math.floor(Math.random()*20),3+Math.floor(Math.random()*20)];if(k[0]===k[1])k[1]=(k[1]+7)%26||5;mgDbg={k};
+    const enc=()=>w.replace(/[A-Z]/g,(ch,i)=>String.fromCharCode((ch.charCodeAt(0)-65+k[i%2])%26+65));
+    o.box.innerHTML='<div class="big" id="cpT"></div>'+[0,1].map(r=>'<div class="rowb" style="align-items:center"><button type="button" class="btn ghost dk" data-r="'+r+'" data-s="25">◀</button><span style="flex:0 0 64px;text-align:center;font-family:var(--f-cond);text-transform:uppercase;letter-spacing:.08em;font-size:13px">'+(r?T.mgR2:T.mgR1)+'</span><button type="button" class="btn ghost dk" data-r="'+r+'" data-s="1">▶</button></div>').join("")+'<button type="button" class="btn" id="cpOk">'+T.mgWord+'</button>';
+    const up=()=>{$("#cpT").textContent=enc()};up();
+    o.box.onclick=e=>{const b=e.target.closest("button");if(!b)return;if(b.id==="cpOk"){if(!k[0]&&!k[1]){o.box.onclick=null;o.done()}else{beep(160,.2);buzz(120);toast(T.mgNoWord)}return}
+      if(b.dataset.r){const r=+b.dataset.r;k[r]=(k[r]+ +b.dataset.s)%26;up();beep(260+r*60,.04)}}},
+  vault(o){const fbk=(s,g)=>{let a=0,b=0;g.forEach((d,i)=>{if(d===s[i])a++;else if(s.includes(d))b++});return[a,b]},all=[];
+    for(let i=0;i<10;i++)for(let j=0;j<10;j++)for(let k=0;k<10;k++)if(i!==j&&j!==k&&i!==k)all.push([i,j,k]);
+    let sec,hints,cur,miss;
+    const gen=()=>{for(;;){sec=all[Math.floor(Math.random()*720)];hints=[];let cand=all;
+      for(let n=0;n<60&&hints.length<5&&cand.length>1;n++){const g=all[Math.floor(Math.random()*720)],f=fbk(sec,g);if(f[0]>=2||(f[0]+f[1]===0&&hints.some(h=>h.f[0]+h.f[1]===0)))continue;
+        const nc=cand.filter(c=>{const x=fbk(c,g);return x[0]===f[0]&&x[1]===f[1]});if(nc.length<cand.length){hints.push({g,f});cand=nc}}
+      if(cand.length===1&&hints.length>=4)return}};
+    const txt=f=>{const p=[];if(f[0])p.push(T.mgV[1].replace("{n}",f[0]));if(f[1])p.push(T.mgV[2].replace("{n}",f[1]));return p.join(", ")||T.mgV[0]};
+    const init=()=>{gen();cur=[0,0,0];miss=0;mgDbg={sec};
+      o.box.innerHTML='<div class="hist" style="align-self:stretch">'+hints.map(h=>'<div>'+h.g.map(d=>'<span class="g0">'+d+'</span>').join("")+' <small style="color:#1b2233">'+txt(h.f)+'</small></div>').join("")+'</div><div class="dig">'+cur.map((d,i)=>'<button type="button" data-d="'+i+'">'+d+'</button>').join("")+'</div><button type="button" class="btn" id="vtOk">'+T.mgOpen+'</button>';
+      o.box.querySelector(".dig").onclick=e=>{const b=e.target.closest("button");if(!b)return;const i=+b.dataset.d;cur[i]=(cur[i]+1)%10;b.textContent=cur[i];beep(300,.05)};
+      $("#vtOk").onclick=()=>{if(cur.every((d,i)=>d===sec[i]))return o.done();miss++;beep(160,.2);buzz(120);if(miss>=3){toast(T.mgVnew);init()}else toast(T.mgNo)}};
+    init()},
+  pairs(o){const SY=["✦","☂","✉","♜","☕","⚓","♞","✂","⚖","☎"];let deck,open,found,turns,lock;
+    const dr=()=>{o.box.innerHTML='<p class="note" style="color:#6a6250">'+T.mgTurns.replace("{n}",turns)+'</p><div id="prG" style="display:grid;grid-template-columns:repeat(4,1fr);gap:6px;width:min(264px,100%)">'+deck.map((s,i)=>{const up=found.has(i)||open.includes(i);return'<button type="button" data-i="'+i+'" style="aspect-ratio:3/4;border-radius:4px;font-size:26px;'+(found.has(i)?'background:#d9cfb6;color:#6a6250':up?'background:#fff;color:#1b2233;box-shadow:inset 0 0 0 2px #f0a63a':'background:#1b2233;color:#4a5b79')+'">'+(up?s:"?")+'</button>'}).join("")+'</div>';
+      $("#prG").onclick=e=>{const b=e.target.closest("button");if(!b||lock)return;const i=+b.dataset.i;if(found.has(i)||open.includes(i))return;open.push(i);beep(300,.05);
+        if(open.length<2){dr();return}turns--;
+        if(deck[open[0]]===deck[open[1]]){found.add(open[0]);found.add(open[1]);open=[];beep(600,.12);dr();if(found.size===12){lock=true;mg.tm.push(setTimeout(o.done,500))}else if(turns<=0)fail()}
+        else{lock=true;dr();mg.tm.push(setTimeout(()=>{open=[];lock=false;if(turns<=0)fail();else dr()},850))}}};
+    const init=()=>{deck=shuffle(shuffle(SY,Math.random).slice(0,6).reduce((a,s)=>a.concat([s,s]),[]),Math.random);open=[];found=new Set();turns=12;lock=false;mgDbg={deck};dr()};
+    const fail=()=>{toast(T.mgShuf);buzz(150);init()};init()},
+  pick(o){const c=o.canvas(),g=c.getContext("2d"),N=5;let pins=0,x=30,dir=1,last=0,zone=0,zw=0,flash=0;
+    const nz=()=>{zw=Math.max(o.rare?20:24,(o.rare?44:56)-pins*7);zone=30+Math.random()*(200-zw);mgDbg={get x(){return x},zone,zw}};nz();
+    c.onpointerdown=()=>{if(x>=zone&&x<=zone+zw){pins++;beep(400+pins*90,.1);buzz(40);flash=.25;if(pins>=N){c.onpointerdown=null;return o.done()}nz()}else{pins=Math.max(0,pins-1);beep(150,.2);buzz(120);flash=-.3;nz()}};
+    const f=ts=>{const dt=Math.min(.05,(ts-last)/1000)||0;last=ts;x+=dir*((o.rare?185:145)+pins*36)*dt;if(x>230){x=230;dir=-1}if(x<30){x=30;dir=1}flash=flash>0?Math.max(0,flash-dt):Math.min(0,flash+dt);
+      g.fillStyle=flash<0?"#3a2030":"#182741";g.fillRect(0,0,260,260);
+      for(let i=0;i<N;i++){const set=i<pins;g.fillStyle=set?"#f0a63a":"#4a5b79";g.fillRect(38+i*40,set?52:78,24,set?74:48);g.fillStyle="#101a2b";g.fillRect(38+i*40,126,24,6)}
+      g.fillStyle="#2c3f62";g.fillRect(30,176,200,14);g.fillStyle="#f0a63a";g.fillRect(zone,172,zw,22);
+      g.fillStyle=flash>0?"#a6ead9":"#ece4d2";g.beginPath();g.arc(x,183,9,0,7);g.fill();g.strokeStyle="#101a2b";g.lineWidth=2;g.stroke();
+      g.fillStyle="#ece4d2";g.font="16px 'Special Elite',monospace";g.textAlign="center";g.fillText(pins+" / "+N,130,236);
+      mg.raf=requestAnimationFrame(f)};mg.raf=requestAnimationFrame(f)},
+  odd(o){const PR=[["O","Q"],["E","F"],["b","d"],["M","N"],["8","B"],["S","5"],["p","q"],["C","G"],["V","Y"],["n","h"]];let round=0;
+    const go=()=>{mg.tm.forEach(clearTimeout);mg.tm=[];const n=[4,5,6,6][round],pr=PR[Math.floor(Math.random()*PR.length)],fl=Math.random()<.5,a=pr[fl?1:0],b=pr[fl?0:1],k=Math.floor(Math.random()*n*n),sec=o.rare?6:8;mgDbg={k};
+      o.box.innerHTML='<p class="note" style="color:#6a6250">'+T.mgRound.replace("{n}",round+1)+'</p><div class="xp" style="width:100%;background:#c9bfa6"><i id="odB" style="width:100%;transition:width '+sec+'s linear"></i></div><div id="odG" style="display:grid;grid-template-columns:repeat('+n+',1fr);gap:4px;width:min(264px,100%)">'+Array.from({length:n*n},(x,i)=>'<button type="button" data-i="'+i+'" style="aspect-ratio:1;background:#1b2233;color:#ece4d2;font:19px ui-monospace,Menlo,Consolas,monospace;border-radius:3px;padding:0">'+(i===k?b:a)+'</button>').join("")+'</div>';
+      requestAnimationFrame(()=>requestAnimationFrame(()=>{const e=$("#odB");if(e)e.style.width="0%"}));
+      const miss=()=>{beep(150,.2);buzz(120);round=Math.max(0,round-1);go()};
+      mg.tm.push(setTimeout(miss,sec*1000));
+      $("#odG").onclick=e=>{const bt=e.target.closest("button");if(!bt)return;if(+bt.dataset.i===k){beep(500+round*120,.12);round++;if(round>=4){mg.tm.forEach(clearTimeout);return o.done()}go()}else miss()}};
+    go()}
+});
 
 home();if(HG)grpOpen(HG[1]);else if(HZ)codeSheet(HZ[1]);
 })();
@@ -1537,7 +1601,7 @@ const PLAY={
 };
 function puzzle(t){
   const rare=t.id!=null,wit=rare||t.kind==="wit";walkTo=null;
-  const key=rare?"lamp":wit?["seq","code","cipher","radio","lamp"][(t.idx+G.seed)%5]:["tiles","dust","code"][(t.idx+G.seed)%3],I=INFO[key];
+  const key=mgKey(t),I=(rare&&T.mgRare[key])||INFO[key];
   sheet('<div class="eyebrow">'+(rare?"A rare shadow":esc(t.name)+(wit?" · "+esc(t.persona):" · evidence"))+'</div><h2>'+I[0]+'</h2><p id="mgHint">'+I[1]+'</p><div id="mgbox"></div><div id="mgOut"></div><button type="button" class="btn ghost dk" id="mgSkip">Come back later</button>');
   $("#sheet").dataset.lock="1";$("#sheetBody").onclick=null;
   $("#mgSkip").onclick=()=>{delete $("#sheet").dataset.lock;closeSheet()};
@@ -1944,6 +2008,70 @@ function xHtml(){const X=G&&G.x;if(!X)return"";let h="";
   if(X.evt&&X.evt.state==="won"){const z=evText(X.evt.t,X.evt.v);h+='<div class="clue"><em>'+T.evTag+'</em><b>'+esc(z[0])+'</b>'+esc(z[1])+'</div>'}
   if(X.iv&&X.iv.q){const s=G.c.sus[X.iv.s];h+='<div class="clue wit"><em>'+T.ivEy+' · '+esc(s.name)+' · '+T.ivRuleS+'</em>'+T.ivQ[X.iv.q]+' „'+esc(ivAns(X.iv,X.iv.q))+'”</div>'}
   return h?'<div class="eyebrow">'+T.xNote+'</div><div class="list">'+h+'</div>':""}
+
+/* ---------- meer en pittiger minispellen ---------- */
+Object.assign(T,{"mgI": {"code": ["A combination lock", "Crack the code: four different digits from 1 to 6. After each try you see how many digits are in the right place and how many are in the code but somewhere else. You have eight tries."], "cipher": ["A note in cipher", "Two rings. Ring 1 shifts the first, third and fifth letter, ring 2 the ones in between. Turn both until a word appears."], "vault": ["A safe with scribbled notes", "Someone wrote down their attempts. Work out the code of three different digits from those notes."], "pairs": ["Torn slips of paper", "Find the six pairs. You may turn over two slips twelve times."], "pick": ["A lock on the door", "Tap the panel when the light is in the gold zone. Five pins. Miss, and one springs back."], "odd": ["One sign is wrong", "Among all these signs, one is different. Tap it before time runs out. Four rounds. A mistake costs you a round."]}, "mgRare": {"pick": ["The shade is slipping away", "Tap the panel when the light is in the gold zone. Five hits. Miss, and you lose one."], "odd": ["The shade is hiding", "Among all these signs, one is different. Tap it before time runs out. Four rounds. A mistake costs you a round."]}, "mgTry": "Try", "mgLeft": "Tries left: {n}", "mgNew": "The lock snaps back. There is a new code on it.", "mgFb": "{a} in the right place · {b} somewhere else", "mgR1": "Ring 1", "mgR2": "Ring 2", "mgWord": "This is the word", "mgNoWord": "That is not a word. Keep turning.", "mgOpen": "Open the safe", "mgNo": "The safe stays shut.", "mgVnew": "Three misses. There are new notes.", "mgV": ["nothing right", "{n} right, in the right place", "{n} right, in the wrong place"], "mgTurns": "Turns left: {n}", "mgShuf": "Too many turns. The slips are shuffled again.", "mgRound": "Round {n} of 4", "mgW": ["ALIBI", "MOTIVE", "WITNESS", "DECEIT", "GUILT", "KILLER", "PROOF", "REVENGE", "LEGACY", "BLACKMAIL", "SUSPECT", "SHADOW", "LANTERN", "SECRET", "POISON"]});Object.assign(INFO,T.mgI);
+let mgDbg=null;
+function mgKey(t){
+  if(t.id!=null)return["lamp","pick","odd"][(Math.max(0,G.rare.indexOf(t))+G.seed)%3];
+  const r=rngOf(G.seed^0x51f15e),ev=shuffle(["tiles","dust","vault","pairs","odd","code"],r).slice(0,3),w=shuffle(["seq","code","cipher","radio","lamp","pairs","vault","pick"].filter(k=>!ev.includes(k)),r);
+  return t.kind==="ev"?ev[t.idx%3]:w[t.idx%w.length]}
+Object.assign(PLAY,{
+  code(o){let sec,cur,left;
+    const init=()=>{sec=shuffle([1,2,3,4,5,6],Math.random).slice(0,4);cur=[1,2,3,4];left=8;mgDbg={sec};
+      o.box.innerHTML='<div class="dig">'+cur.map((d,i)=>'<button type="button" data-d="'+i+'" style="width:48px">'+d+'</button>').join("")+'</div><button type="button" class="btn" id="cdTry">'+T.mgTry+'</button><p class="note" id="cdL" style="color:#6a6250">'+T.mgLeft.replace("{n}",left)+'</p><div class="hist" id="cdH"></div>';
+      o.box.querySelector(".dig").onclick=e=>{const b=e.target.closest("button");if(!b)return;const i=+b.dataset.d;cur[i]=cur[i]%6+1;b.textContent=cur[i];beep(300,.05)};
+      $("#cdTry").onclick=()=>{const a=cur.filter((d,i)=>d===sec[i]).length,b=sec.filter((d,i)=>cur[i]!==d&&cur.includes(d)).length;
+        if(a===4)return o.done();left--;beep(200,.1);
+        $("#cdH").insertAdjacentHTML("afterbegin",'<div>'+cur.map(d=>'<span class="g0">'+d+'</span>').join("")+' <small style="color:#1b2233">'+T.mgFb.replace("{a}",a).replace("{b}",b)+'</small></div>');
+        if(left<=0){toast(T.mgNew);buzz(150);init()}else $("#cdL").textContent=T.mgLeft.replace("{n}",left)}};
+    init()},
+  cipher(o){const ws=T.mgW,w=ws[Math.floor(Math.random()*ws.length)],k=[3+Math.floor(Math.random()*20),3+Math.floor(Math.random()*20)];if(k[0]===k[1])k[1]=(k[1]+7)%26||5;mgDbg={k};
+    const enc=()=>w.replace(/[A-Z]/g,(ch,i)=>String.fromCharCode((ch.charCodeAt(0)-65+k[i%2])%26+65));
+    o.box.innerHTML='<div class="big" id="cpT"></div>'+[0,1].map(r=>'<div class="rowb" style="align-items:center"><button type="button" class="btn ghost dk" data-r="'+r+'" data-s="25">◀</button><span style="flex:0 0 64px;text-align:center;font-family:var(--f-cond);text-transform:uppercase;letter-spacing:.08em;font-size:13px">'+(r?T.mgR2:T.mgR1)+'</span><button type="button" class="btn ghost dk" data-r="'+r+'" data-s="1">▶</button></div>').join("")+'<button type="button" class="btn" id="cpOk">'+T.mgWord+'</button>';
+    const up=()=>{$("#cpT").textContent=enc()};up();
+    o.box.onclick=e=>{const b=e.target.closest("button");if(!b)return;if(b.id==="cpOk"){if(!k[0]&&!k[1]){o.box.onclick=null;o.done()}else{beep(160,.2);buzz(120);toast(T.mgNoWord)}return}
+      if(b.dataset.r){const r=+b.dataset.r;k[r]=(k[r]+ +b.dataset.s)%26;up();beep(260+r*60,.04)}}},
+  vault(o){const fbk=(s,g)=>{let a=0,b=0;g.forEach((d,i)=>{if(d===s[i])a++;else if(s.includes(d))b++});return[a,b]},all=[];
+    for(let i=0;i<10;i++)for(let j=0;j<10;j++)for(let k=0;k<10;k++)if(i!==j&&j!==k&&i!==k)all.push([i,j,k]);
+    let sec,hints,cur,miss;
+    const gen=()=>{for(;;){sec=all[Math.floor(Math.random()*720)];hints=[];let cand=all;
+      for(let n=0;n<60&&hints.length<5&&cand.length>1;n++){const g=all[Math.floor(Math.random()*720)],f=fbk(sec,g);if(f[0]>=2||(f[0]+f[1]===0&&hints.some(h=>h.f[0]+h.f[1]===0)))continue;
+        const nc=cand.filter(c=>{const x=fbk(c,g);return x[0]===f[0]&&x[1]===f[1]});if(nc.length<cand.length){hints.push({g,f});cand=nc}}
+      if(cand.length===1&&hints.length>=4)return}};
+    const txt=f=>{const p=[];if(f[0])p.push(T.mgV[1].replace("{n}",f[0]));if(f[1])p.push(T.mgV[2].replace("{n}",f[1]));return p.join(", ")||T.mgV[0]};
+    const init=()=>{gen();cur=[0,0,0];miss=0;mgDbg={sec};
+      o.box.innerHTML='<div class="hist" style="align-self:stretch">'+hints.map(h=>'<div>'+h.g.map(d=>'<span class="g0">'+d+'</span>').join("")+' <small style="color:#1b2233">'+txt(h.f)+'</small></div>').join("")+'</div><div class="dig">'+cur.map((d,i)=>'<button type="button" data-d="'+i+'">'+d+'</button>').join("")+'</div><button type="button" class="btn" id="vtOk">'+T.mgOpen+'</button>';
+      o.box.querySelector(".dig").onclick=e=>{const b=e.target.closest("button");if(!b)return;const i=+b.dataset.d;cur[i]=(cur[i]+1)%10;b.textContent=cur[i];beep(300,.05)};
+      $("#vtOk").onclick=()=>{if(cur.every((d,i)=>d===sec[i]))return o.done();miss++;beep(160,.2);buzz(120);if(miss>=3){toast(T.mgVnew);init()}else toast(T.mgNo)}};
+    init()},
+  pairs(o){const SY=["✦","☂","✉","♜","☕","⚓","♞","✂","⚖","☎"];let deck,open,found,turns,lock;
+    const dr=()=>{o.box.innerHTML='<p class="note" style="color:#6a6250">'+T.mgTurns.replace("{n}",turns)+'</p><div id="prG" style="display:grid;grid-template-columns:repeat(4,1fr);gap:6px;width:min(264px,100%)">'+deck.map((s,i)=>{const up=found.has(i)||open.includes(i);return'<button type="button" data-i="'+i+'" style="aspect-ratio:3/4;border-radius:4px;font-size:26px;'+(found.has(i)?'background:#d9cfb6;color:#6a6250':up?'background:#fff;color:#1b2233;box-shadow:inset 0 0 0 2px #f0a63a':'background:#1b2233;color:#4a5b79')+'">'+(up?s:"?")+'</button>'}).join("")+'</div>';
+      $("#prG").onclick=e=>{const b=e.target.closest("button");if(!b||lock)return;const i=+b.dataset.i;if(found.has(i)||open.includes(i))return;open.push(i);beep(300,.05);
+        if(open.length<2){dr();return}turns--;
+        if(deck[open[0]]===deck[open[1]]){found.add(open[0]);found.add(open[1]);open=[];beep(600,.12);dr();if(found.size===12){lock=true;mg.tm.push(setTimeout(o.done,500))}else if(turns<=0)fail()}
+        else{lock=true;dr();mg.tm.push(setTimeout(()=>{open=[];lock=false;if(turns<=0)fail();else dr()},850))}}};
+    const init=()=>{deck=shuffle(shuffle(SY,Math.random).slice(0,6).reduce((a,s)=>a.concat([s,s]),[]),Math.random);open=[];found=new Set();turns=12;lock=false;mgDbg={deck};dr()};
+    const fail=()=>{toast(T.mgShuf);buzz(150);init()};init()},
+  pick(o){const c=o.canvas(),g=c.getContext("2d"),N=5;let pins=0,x=30,dir=1,last=0,zone=0,zw=0,flash=0;
+    const nz=()=>{zw=Math.max(o.rare?20:24,(o.rare?44:56)-pins*7);zone=30+Math.random()*(200-zw);mgDbg={get x(){return x},zone,zw}};nz();
+    c.onpointerdown=()=>{if(x>=zone&&x<=zone+zw){pins++;beep(400+pins*90,.1);buzz(40);flash=.25;if(pins>=N){c.onpointerdown=null;return o.done()}nz()}else{pins=Math.max(0,pins-1);beep(150,.2);buzz(120);flash=-.3;nz()}};
+    const f=ts=>{const dt=Math.min(.05,(ts-last)/1000)||0;last=ts;x+=dir*((o.rare?185:145)+pins*36)*dt;if(x>230){x=230;dir=-1}if(x<30){x=30;dir=1}flash=flash>0?Math.max(0,flash-dt):Math.min(0,flash+dt);
+      g.fillStyle=flash<0?"#3a2030":"#182741";g.fillRect(0,0,260,260);
+      for(let i=0;i<N;i++){const set=i<pins;g.fillStyle=set?"#f0a63a":"#4a5b79";g.fillRect(38+i*40,set?52:78,24,set?74:48);g.fillStyle="#101a2b";g.fillRect(38+i*40,126,24,6)}
+      g.fillStyle="#2c3f62";g.fillRect(30,176,200,14);g.fillStyle="#f0a63a";g.fillRect(zone,172,zw,22);
+      g.fillStyle=flash>0?"#a6ead9":"#ece4d2";g.beginPath();g.arc(x,183,9,0,7);g.fill();g.strokeStyle="#101a2b";g.lineWidth=2;g.stroke();
+      g.fillStyle="#ece4d2";g.font="16px 'Special Elite',monospace";g.textAlign="center";g.fillText(pins+" / "+N,130,236);
+      mg.raf=requestAnimationFrame(f)};mg.raf=requestAnimationFrame(f)},
+  odd(o){const PR=[["O","Q"],["E","F"],["b","d"],["M","N"],["8","B"],["S","5"],["p","q"],["C","G"],["V","Y"],["n","h"]];let round=0;
+    const go=()=>{mg.tm.forEach(clearTimeout);mg.tm=[];const n=[4,5,6,6][round],pr=PR[Math.floor(Math.random()*PR.length)],fl=Math.random()<.5,a=pr[fl?1:0],b=pr[fl?0:1],k=Math.floor(Math.random()*n*n),sec=o.rare?6:8;mgDbg={k};
+      o.box.innerHTML='<p class="note" style="color:#6a6250">'+T.mgRound.replace("{n}",round+1)+'</p><div class="xp" style="width:100%;background:#c9bfa6"><i id="odB" style="width:100%;transition:width '+sec+'s linear"></i></div><div id="odG" style="display:grid;grid-template-columns:repeat('+n+',1fr);gap:4px;width:min(264px,100%)">'+Array.from({length:n*n},(x,i)=>'<button type="button" data-i="'+i+'" style="aspect-ratio:1;background:#1b2233;color:#ece4d2;font:19px ui-monospace,Menlo,Consolas,monospace;border-radius:3px;padding:0">'+(i===k?b:a)+'</button>').join("")+'</div>';
+      requestAnimationFrame(()=>requestAnimationFrame(()=>{const e=$("#odB");if(e)e.style.width="0%"}));
+      const miss=()=>{beep(150,.2);buzz(120);round=Math.max(0,round-1);go()};
+      mg.tm.push(setTimeout(miss,sec*1000));
+      $("#odG").onclick=e=>{const bt=e.target.closest("button");if(!bt)return;if(+bt.dataset.i===k){beep(500+round*120,.12);round++;if(round>=4){mg.tm.forEach(clearTimeout);return o.done()}go()}else miss()}};
+    go()}
+});
 
 home();if(HG)grpOpen(HG[1]);else if(HZ)codeSheet(HZ[1]);
 })();
