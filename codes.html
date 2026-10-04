@@ -1,6 +1,6 @@
 <!doctype html>
 <html lang="nl"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex">
-<title>Codes maken · Moordwandeling</title>
+<title>Codes maken · Moordwandeling / Murder Walk (platform)</title>
 <style>
 body{margin:0;background:#101a2b;color:#ece4d2;font:16px/1.5 system-ui,sans-serif}
 main{max-width:640px;margin:0 auto;padding:24px 16px 60px}
@@ -16,7 +16,7 @@ textarea{height:92px;font:13px/1.4 ui-monospace,monospace;background:#fff;color:
 ol{padding-left:20px;color:#c8d2e4}code{background:#182741;padding:1px 5px;border-radius:3px}
 </style></head><body><main>
 <h1>Codes maken</h1>
-<p>Voor Moordwandeling / Murder Walk. Deze pagina verstuurt niets; alles gebeurt op dit apparaat.</p>
+<p>Eén codelijst voor het hele platform: een Pro-code werkt in álle wandelingen (Moordwandeling, De Verdwijning en wat er nog komt), op beide domeinen. Deze pagina verstuurt niets; alles gebeurt op dit apparaat.</p>
 
 <h2>1. Nieuwe code</h2>
 <label for="t">Soort</label>
@@ -35,6 +35,7 @@ ol{padding-left:20px;color:#c8d2e4}code{background:#182741;padding:1px 5px;borde
 </div>
 
 <h2>2. Zo ziet codes.json eruit</h2>
+<p>Het bestand staat in de root van de repo (<code>/codes.json</code>) en wordt door elk spel via <code>/shared/platform.js</code> geladen. Het zout voor de hashes staat in platform.js (<code>salt</code>) en mag nooit veranderen.</p>
 <textarea readonly style="height:150px">{"codes":[
   {"h":"...","t":"pro","naam":"Pro oktober"},
   {"h":"...","t":"groep","tot":"2026-12-31","naam":"Groep november"},
