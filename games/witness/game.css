@@ -1,4 +1,5 @@
-/* De Verdwijning / The Vanishing – spelstijl bovenop /shared/platform.css.
+/* Ooggetuige / Eyewitness – spelstijl bovenop /shared/platform.css (basis van De Verdwijning; helemaal onderaan de eigen laag: alles speelt zich af in je telefoon).
+   Oorspronkelijke kop:
    Onderaan staat de sfeerfoto-laag (hero.webp): avondrood boven een natte kade, lantaarnlicht, gescheurd papier, rode routelijn. */
 body{overflow:hidden}
 #app{height:100%;position:relative}
@@ -190,3 +191,89 @@ input[type=range]{width:100%;accent-color:var(--blood)}
 .gsm .off{align-self:center;margin-top:10px;font-size:11.5px;color:#e0545f;letter-spacing:.04em;opacity:0;animation:pop .6s ease-out 7s forwards}
 @keyframes pop{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
 @keyframes blink{0%,60%,100%{opacity:.25}30%{opacity:1}}
+
+/* ================= Ooggetuige: donkere telefoon, koud staal, amber lantaarns, rood gevaar ================= */
+:root{--night:#070708;--night2:#111214;--street:#2b2d31;--fog:#9aa0a8;--paper:#121316;--paper2:#1b1d21;--ink:#ecebe8;--ink2:#9aa0a8;--rule:#2e3136;
+  --lamp:#f0963c;--spook:#b9c6d6;--blood:#c2262e;--violet:#8fa3b8}
+#home{background:linear-gradient(180deg,rgba(7,7,8,.55) 0%,rgba(7,7,8,.1) 14%,rgba(7,7,8,0) 22%,rgba(7,7,8,0) 46%,rgba(7,7,8,.85) 60%,var(--night) 70%),url("hero.webp") 42% top/cover no-repeat,var(--night)}
+@media (min-aspect-ratio:4/5){#home{background:linear-gradient(90deg,var(--night) 0%,rgba(7,7,8,0) 28%,rgba(7,7,8,0) 72%,var(--night) 100%),linear-gradient(180deg,rgba(7,7,8,.55) 0%,rgba(7,7,8,0) 22%,rgba(7,7,8,0) 46%,rgba(7,7,8,.85) 60%,var(--night) 70%),url("hero.webp") center top/auto 100vh no-repeat,var(--night)}}
+#brief,#load{background:linear-gradient(180deg,rgba(7,7,8,.88),rgba(7,7,8,.97)),url("hero.webp") 42% top/cover no-repeat,var(--night)}
+.gap{min-height:clamp(210px,36vh,340px)}
+/* titel: grillig, trilt af en toe uit elkaar */
+#ttl{position:relative;font-size:clamp(38px,12vw,58px);color:#f1eee8;text-shadow:0 2px 2px #000,0 0 30px #000;animation:jit 5.5s infinite steps(1)}
+@keyframes jit{0%,91%,100%{transform:none;text-shadow:0 2px 2px #000,0 0 30px #000}92%{transform:translate(-2px,1px) skewX(-4deg);text-shadow:3px 0 0 rgba(194,38,46,.8),-3px 0 0 rgba(143,163,184,.7)}94%{transform:translate(2px,-1px) skewX(3deg);text-shadow:-4px 0 0 rgba(194,38,46,.8),4px 0 0 rgba(143,163,184,.7)}96%{transform:translate(-1px,0);text-shadow:2px 0 0 rgba(194,38,46,.6),-2px 0 0 rgba(143,163,184,.5)}}
+#ttl .ch{animation:none}
+.masthead .redline{width:60%}
+#home .lead{font-size:20px;text-shadow:0 1px 8px #000}
+.tasks li:last-child{color:#e0545f}
+/* telefoon: donkere ballonnen zoals op de sfeerfoto */
+.gsm{transform:rotate(2.5deg)}
+.gsm .chat p,.chat p{margin:0;background:#2b2d31;color:#f1eee8;font-family:var(--f-body);font-size:16px;line-height:1.3;padding:9px 13px;border-radius:17px 17px 17px 4px;display:flex;gap:12px;align-items:flex-end;max-width:92%}
+.gsm .chat p i,.chat p i{font-style:normal;font-size:10.5px;color:#8b9099;white-space:nowrap;margin-left:auto}
+.gsm .chat .dots{background:#1d1f22}
+.gsm .off{color:#e0545f}
+.chat{display:flex;flex-direction:column;gap:9px;align-items:flex-start}
+#sheetBody .chat p{opacity:0;animation:pop .45s ease-out forwards}
+#sheetBody .chat>*:nth-child(1){animation-delay:.15s}#sheetBody .chat>*:nth-child(2){animation-delay:1s}#sheetBody .chat>*:nth-child(3){animation-delay:1.9s}#sheetBody .chat>*:nth-child(4){animation-delay:2.8s}#sheetBody .chat>*:nth-child(5){animation-delay:3.6s}
+#sheetBody .chat p:last-child{background:#3a2a16;color:#f6c88f;border:1px solid rgba(240,150,60,.45)}
+.chathead{display:flex;align-items:center;gap:12px;padding-bottom:12px;border-bottom:1px solid var(--rule)}
+.chathead .av,.gsm .av{width:38px;height:38px;border-radius:50%;background:#2b2d31;position:relative;overflow:hidden;flex:none}
+.chathead .av::before{content:"?";position:absolute;inset:0;display:grid;place-items:center;color:#8b9099;font-family:var(--f-body);font-weight:600;font-size:18px}
+.gsm .av::before{content:"?";position:absolute;inset:0;left:0;top:0;width:auto;height:auto;margin:0;border-radius:0;background:none;display:grid;place-items:center;color:#8b9099;font-weight:600;font-size:17px}
+.gsm .av::after{display:none}
+.chathead b{display:block;font-family:var(--f-body);font-weight:600;font-size:17px;line-height:1.1}
+.chathead small{font-size:12.5px;color:var(--ink2)}
+.att{align-self:flex-start;max-width:96%;background:#1b1d21;border:1px solid var(--rule);border-radius:14px 14px 14px 4px;padding:8px;display:flex;flex-direction:column;gap:6px;opacity:0;animation:pop .45s ease-out forwards}
+.att em{font-style:normal;font-family:var(--f-cond);text-transform:uppercase;letter-spacing:.1em;font-size:12px;color:#8fa3b8;padding:0 5px}
+.att span{font-size:16px;line-height:1.35;padding:0 5px 4px;color:#ecebe8}
+.att.k-cam em{color:#e0545f}.att.k-cam em::before{content:"● ";}
+.att.k-wit span{font-style:italic}
+.figc{align-self:stretch;width:100%;max-width:250px;height:auto;aspect-ratio:1;border:0;border-radius:9px;transform:none;box-shadow:none;background:linear-gradient(180deg,#0d1117 0%,#1a222c 52%,#2a3440 60%,#0b0d10 62%,#050506 100%)}
+.att.k-cam .figc{filter:grayscale(.85) contrast(1.15);background:repeating-linear-gradient(0deg,rgba(255,255,255,.04) 0 1px,rgba(255,255,255,0) 1px 3px),linear-gradient(180deg,#10151b 0%,#27313c 58%,#0b0d10 62%,#050506 100%)}
+/* vellen = schermen van je telefoon */
+.paper{background:linear-gradient(180deg,#16171a,#0c0d0f);color:var(--ink)}
+.paper h2,.paper h3{color:var(--ink)}
+.sheet{background:rgba(0,0,0,.72)}
+.sheet>.paper{clip-path:none;border-radius:26px 26px 0 0;padding-top:20px;border-top:1px solid #3a3d44;box-shadow:0 -20px 60px rgba(0,0,0,.8)}
+#brief .paper{clip-path:none;transform:none;border-radius:26px;border:1px solid #2e3136;padding-top:22px;background:linear-gradient(180deg,rgba(22,23,26,.96),rgba(12,13,15,.98))}
+.phead{grid-template-columns:1fr}.phead .sil{display:none}
+.stamp2{border-color:#c2262e;color:#e0545f;background:transparent}
+.msgcard,.paper .msgcard{background:#0a0b0c;border:1px solid #2e3136;border-radius:18px;transform:none;box-shadow:none}
+.msgcard small{color:#8b9099}.msgcard small::before{background:#e0545f}
+.msgcard span{background:#2b2d31;color:#f1eee8}
+.sus{border-color:var(--rule);background:#17191c;border-radius:12px}
+.sus b{font-family:var(--f-body);font-weight:600;font-size:17px}
+.sus small{color:var(--ink2)}
+.sus .q{margin:2px 0 4px;align-self:flex-start;background:#2b2d31;color:#f1eee8;font-size:15px;padding:7px 11px;border-radius:14px 14px 14px 4px}
+.sus.pick{border-color:#f0963c;box-shadow:inset 0 0 0 1px #f0963c}
+#vW .sus.pick{border-color:#e0545f;box-shadow:inset 0 0 0 1px #e0545f}
+.tags i{background:#24262b;color:#c9ccd2;border-radius:10px;padding:2px 8px}
+.tags+.tags i{background:#2a2117;color:#f0c391}
+.btn.dk{color:var(--ink);border-color:#3a3d44}
+.inp{background:#0a0b0c;color:var(--ink);border-color:#3a3d44}
+.tabs button{border-bottom-color:var(--rule);color:var(--ink2);font-size:13px;padding:8px 2px}
+.tabs button[aria-selected="true"]{border-color:#f0963c;color:var(--ink)}
+.clue,.clue.k-msg,.clue.k-open,.clue.k-cam,.clue.k-wit,.clue.k-obj,.clue.k-time{background:#17191c;border:1px solid var(--rule);border-left:3px solid #3a3d44;border-radius:10px;padding:10px 12px;transform:none;box-shadow:none;color:var(--ink)}
+.clue.isK{border-left-color:#e0545f}.clue.isA{border-left-color:#f0963c}
+.clue em,.clue.k-msg em,.clue.k-open em{color:var(--ink2)}.clue.k-cam em::after{content:""}
+.clue p,.clue.k-msg p,.clue.k-open p,.clue.k-cam p,.clue.k-wit p,.clue.k-obj p,.clue.k-time p{background:none;color:var(--ink);font-family:var(--f-body);font-size:15.5px;padding:0;border-radius:0;text-decoration:none;align-self:auto;line-height:1.4}
+.book div{border-color:var(--rule)}.r1{color:#9aa0a8}.r2{color:#8fa3b8}.r3{color:#f0963c}
+.stars{color:#f0963c}
+#vMsg,#dMsg,#pMsg{color:#e0545f!important}
+/* kaart */
+#hud{background:linear-gradient(180deg,rgba(4,4,5,.97),rgba(17,18,20,.9));border-bottom:1px solid #2e3136}
+#hud b{color:#ecebe8}#hud span{color:#8b9099}
+#hud div.danger b{color:#e0545f;animation:blink 1s infinite}#hud div.danger span{color:#e0545f}
+#zoom button{background:rgba(7,7,8,.9);border-color:#3a3d44}
+#radar{background:rgba(7,7,8,.92);border-color:#3a3d44;color:#f3c9a0}
+#bar button{background:rgba(7,7,8,.94);border-color:#3a3d44}
+#bar button.red{background:#f0963c;border-color:#ffd9a0;color:#1a1208}
+#chip{clip-path:none;padding-top:12px;background:#16171a;color:var(--ink);border:1px solid #3a3d44;border-radius:16px}
+#chip b{font-family:var(--f-body);font-size:17px;font-weight:600}#chip .note{color:var(--ink2)}
+#toast{background:#2b2d31;color:#f1eee8;border:1px solid #3a3d44;border-radius:16px 16px 16px 4px;font-weight:500;box-shadow:0 10px 30px rgba(0,0,0,.6)}
+#play::after{background:radial-gradient(ellipse at 50% 45%,rgba(7,7,8,0) 30%,rgba(0,0,0,.88) 100%)}
+.dustw div{color:#f3c9a0}.big{background:#0a0b0c;color:#b9c6d6}
+body,.btn.ghost,.pill,#zoom button,#bar button{color:#ecebe8}
+.btn.ghost.dk,.btn.dk{color:#ecebe8}
+#bar button.red{color:#1a1208}
+.pill{background:rgba(7,7,8,.7);border-color:rgba(236,235,232,.35)}
