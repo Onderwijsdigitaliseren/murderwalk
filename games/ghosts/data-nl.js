@@ -169,7 +169,16 @@ window.NG_DATA={
     "Legendarisch"
    ],
    "new": "nieuw"
-  }
+  },
+  "news": [
+   "Vermiste vrouw",
+   "Sedert dinsdag geen spoor meer"
+  ],
+  "stmt": "Getuigenverklaring",
+  "stamp": "Onmogelijk",
+  "exhibit": "Bewijsstuk",
+  "file": "Dossiernotitie",
+  "found": "Gevonden op deze plek"
  },
  "TYPES": {
   "kerk": [
@@ -360,8 +369,8 @@ window.NG_DATA={
    "role": "onderwijzeres",
    "y": 1923,
    "age": 31,
-   "a": 1,
-   "b": 1
+   "a": 0,
+   "b": 0
   },
   {
    "n": "Elisabeth Verhoeven",
@@ -369,16 +378,16 @@ window.NG_DATA={
    "role": "winkeliersdochter",
    "y": 1919,
    "age": 22,
-   "a": 0,
+   "a": 1,
    "b": 1
   },
   {
    "n": "Anna de Rooij",
    "ini": "A.d.R.",
-   "role": "baker",
+   "role": "bakker",
    "y": 1902,
    "age": 38,
-   "a": 0,
+   "a": 1,
    "b": 0
   },
   {
