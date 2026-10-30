@@ -2,30 +2,15 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<script>(function(){var h=location.hash||"",L="",R=location.pathname.replace(/\/(nl\/)?[^\/]*$/,"/");window.ROOT=R;try{L=(localStorage.getItem("ss_lang")||"").replace(/"/g,"")}catch(e){}
-var nl=L==="nl"||(L!=="en"&&/moordwandeling/i.test(location.hostname));
-if(/^#z=TD/i.test(h)){location.replace(R+(nl?"nl/tot-de-dood-ons-scheidt.html":"till-death-do-us-part.html")+h);return}
-if(/^#z=NG/i.test(h)){location.replace(R+(nl?"nl/de-nacht-van-de-geesten.html":"night-of-the-ghosts.html")+h);return}
-if(/^#z=OG/i.test(h)){location.replace(R+(nl?"nl/ooggetuige.html":"eyewitness.html")+h);return}
-if(/^#z=CC/i.test(h)){location.replace(R+(nl?"nl/onopgelost.html":"unsolved.html")+h);return}
-if(/^#z=LB/i.test(h)){location.replace(R+(nl?"nl/de-laatste-bus.html":"the-last-bus.html")+h);return}
-if(/^#z=VZ/i.test(h)){location.replace(R+(nl?"nl/de-verdwijning.html":"the-vanishing.html")+h);return}
-if(/^#(z|g)=/.test(h)){location.replace(R+(nl?"nl/moordwandeling.html":"murder-walk.html")+h);return}
-document.documentElement.lang=nl?"nl":"en";window.NL=nl})();</script>
-<meta name="viewport" content="width=device-width,initial-scale=1">
+<script>(function(){var p=location.pathname||"/",q=location.search||"",h=location.hash||"";
+if(p==="/"||p==="/index.html"){p="/";q=q?q+"&en":"?en"}
+location.replace("https://moordwandeling.nl"+p+q+h)})();</script>
+<meta http-equiv="refresh" content="0;url=https://moordwandeling.nl/?en">
 <meta name="robots" content="noindex">
-<title>Not found · Murder Walk</title>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Special+Elite&family=Barlow:wght@400;500;600&display=swap">
-<script>document.write('<link rel="stylesheet" href="'+ROOT+'shared/platform.css?v=1">')</script>
-<style>main{min-height:100vh;display:flex;align-items:center}.wrap{gap:14px}</style>
+<link rel="canonical" href="https://moordwandeling.nl/">
+<title>Murder Walk is now at moordwandeling.nl</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<style>body{margin:0;min-height:100vh;display:grid;place-items:center;background:#101a2b;color:#ece4d2;font:16px/1.5 system-ui,sans-serif;text-align:center;padding:16px}a{color:#f0a63a}</style>
 </head>
-<body>
-<main><div class="wrap">
-  <div class="eyebrow" id="e">Dossier not found</div>
-  <h1 id="h">This street does not exist</h1>
-  <p class="lead" id="p">The page you were looking for is not in the archive. All walks are on the start page.</p>
-  <a class="btn" id="b" href="/">To all walks</a>
-</div></main>
-<script>document.getElementById("b").href=ROOT;if(window.NL){document.title="Niet gevonden · Moordwandeling";document.getElementById("e").textContent="Dossier niet gevonden";document.getElementById("h").textContent="Deze straat bestaat niet";document.getElementById("p").textContent="De pagina die je zocht staat niet in het archief. Alle wandelingen vind je op de startpagina.";var b=document.getElementById("b");b.textContent="Naar alle wandelingen";b.href=ROOT+"nl/"}</script>
-</body>
+<body><p>Murder Walk has moved to <a href="https://moordwandeling.nl/?en">moordwandeling.nl</a>.</p></body>
 </html>

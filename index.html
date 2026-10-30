@@ -2,96 +2,15 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<script>(function(){var h=location.hash||"",L="";try{L=(localStorage.getItem("ss_lang")||"").replace(/"/g,"")}catch(e){}
-var nl=h==="#nl"?true:h==="#en"?false:L==="nl"?true:L==="en"?false:/moordwandeling/i.test(location.hostname);
-if(/^#z=TD/i.test(h)){location.replace((nl?"nl/tot-de-dood-ons-scheidt.html":"till-death-do-us-part.html")+h);return}
-if(/^#z=NG/i.test(h)){location.replace((nl?"nl/de-nacht-van-de-geesten.html":"night-of-the-ghosts.html")+h);return}
-if(/^#z=OG/i.test(h)){location.replace((nl?"nl/ooggetuige.html":"eyewitness.html")+h);return}
-if(/^#z=CC/i.test(h)){location.replace((nl?"nl/onopgelost.html":"unsolved.html")+h);return}
-if(/^#z=LB/i.test(h)){location.replace((nl?"nl/de-laatste-bus.html":"the-last-bus.html")+h);return}
-if(/^#z=VZ/i.test(h)){location.replace((nl?"nl/de-verdwijning.html":"the-vanishing.html")+h);return}
-if(/^#(z|g)=/.test(h)){location.replace((nl?"nl/moordwandeling.html":"murder-walk.html")+h);return}
-if(h==="#nl"||h==="#en"){try{localStorage.setItem("ss_lang",nl?"nl":"en")}catch(e){}}
-if(nl)location.replace("nl/");})();</script>
-<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<title>Murder Walk – Detective games you walk in your own streets</title>
-<meta name="description" content="Walking detective games played on real places around you via GPS: a murder mystery, a missing-person case and more. Free first case, in English or Dutch.">
-<link rel="canonical" href="https://murderwalk.com/">
-<link rel="alternate" hreflang="en" href="https://murderwalk.com/">
-<link rel="alternate" hreflang="nl" href="https://moordwandeling.nl/nl/">
-<link rel="alternate" hreflang="x-default" href="https://murderwalk.com/">
-<meta property="og:site_name" content="Murder Walk">
-<meta property="og:title" content="Murder Walk – detective games you walk">
-<meta property="og:description" content="Eight leads at real places in your own streets. A murder mystery, a missing-person case, more to come. Free first case.">
-<meta property="og:type" content="website">
-<meta property="og:url" content="https://murderwalk.com/">
-<meta property="og:locale" content="en_GB">
-<meta name="twitter:card" content="summary_large_image">
-<meta name="twitter:image" content="https://murderwalk.com/assets/hero.webp">
-<meta name="theme-color" content="#101a2b">
-<link rel="icon" href="assets/favicon.png">
-<link rel="apple-touch-icon" href="assets/logo-en-192.png">
-<meta property="og:image" content="https://murderwalk.com/assets/hero.webp">
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Special+Elite&family=Barlow:wght@400;500;600&family=Barlow+Condensed:wght@600&display=swap">
-<link rel="stylesheet" href="shared/platform.css?v=1">
-<link rel="stylesheet" href="shared/hub.css?v=3">
-<script type="application/ld+json">
-{"@context":"https://schema.org","@type":"WebSite","name":"Murder Walk","url":"https://murderwalk.com/","description":"Walking detective games played on real places around you.","inLanguage":"en","hasPart":[
-{"@type":"VideoGame","name":"Murder Walk","url":"https://murderwalk.com/murder-walk.html","genre":["Detective","Location-based game"],"gamePlatform":"Web browser"},
-{"@type":"VideoGame","name":"The Vanishing","url":"https://murderwalk.com/the-vanishing.html","genre":["Detective","Location-based game"],"gamePlatform":"Web browser"}]}
-</script>
+<script>(function(){var p=location.pathname||"/",q=location.search||"",h=location.hash||"";
+if(p==="/"||p==="/index.html"){p="/";q=q?q+"&en":"?en"}
+location.replace("https://moordwandeling.nl"+p+q+h)})();</script>
+<meta http-equiv="refresh" content="0;url=https://moordwandeling.nl/?en">
+<meta name="robots" content="noindex">
+<link rel="canonical" href="https://moordwandeling.nl/">
+<title>Murder Walk is now at moordwandeling.nl</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<style>body{margin:0;min-height:100vh;display:grid;place-items:center;background:#101a2b;color:#ece4d2;font:16px/1.5 system-ui,sans-serif;text-align:center;padding:16px}a{color:#f0a63a}</style>
 </head>
-<body>
-<canvas id="sky" aria-hidden="true"></canvas>
-<main>
-  <div class="wrap">
-    <header class="hero">
-      <div class="top"><div class="eyebrow">Detective games in your own streets</div><a class="pill" id="lang" href="nl/" hreflang="nl" lang="nl">Nederlands</a></div>
-      <h1 id="ttl">Murder Walk</h1>
-      <img class="logo" src="assets/logo-en.webp" alt="Murder Walk" width="800" height="800" fetchpriority="high">
-      <p id="typed">Eight leads at real places around you.</p>
-      <p class="lead">The map puts the leads on real places around you: the church, the bus stop, the café. You walk there, find what is left behind, and draw your own conclusion.</p>
-      <div class="cta"><a class="btn" href="#cats">Choose your walk</a><span class="arrow" aria-hidden="true">▼</span></div>
-    </header>
-
-    <section class="profile" aria-label="Your profile">
-      <span class="pr"><b id="pRank">Cadet</b><span class="xp"><i id="pXp" style="width:0%"></i></span></span>
-      <span><b id="pStreak">0</b> day streak</span>
-      <span><b id="pSolved">0</b> solved</span>
-      <span id="status" class="st"></span>
-      <span id="pNext" hidden></span>
-      <button class="plink" id="bPro">Go Pro</button>
-    </section>
-
-    <section>
-      <h2 class="eyebrow" style="margin-bottom:10px">Choose your walk</h2>
-      <div class="cats" id="cats">
-        <noscript><p>Games: <a href="murder-walk.html">Murder Walk</a> · <a href="the-vanishing.html">The Vanishing</a>. This site needs JavaScript to play.</p></noscript>
-      </div>
-    </section>
-
-    <section class="steps" aria-label="How it works">
-      <div><b>1</b><p>Open a walk on your phone, allow location, and the map lays its leads on real places within a short walk of where you stand.</p></div>
-      <div><b>2</b><p>Walk there. Within 35 metres a lead opens: a shade that saw something, a piece of evidence, a camera still, a message.</p></div>
-      <div><b>3</b><p>Draw your conclusion in the notebook. Your rank, day streak and Pro status are shared across every walk on this site.</p></div>
-    </section>
-
-    <section class="paper" id="proBox" aria-label="Pro"></section>
-
-
-    <footer>
-      <button type="button" id="bPriv">Privacy</button>
-      <a href="mailto:kellievandekerkhof@gmail.com">Contact</a>
-      <a href="https://graveyardfiles.com/" rel="noopener">The Graveyard Files (desk cases)</a>
-      <span>Stay on public roads and mind the traffic.</span>
-    </footer>
-  </div>
-</main>
-<div class="sheet" id="sheet" hidden><div class="paper" id="sheetBody"></div></div>
-<div id="toast" hidden></div>
-<script src="shared/platform.js?v=1"></script>
-<script src="shared/catalog.js?v=7"></script>
-<script src="shared/hub.js?v=7"></script>
-</body>
+<body><p>Murder Walk has moved to <a href="https://moordwandeling.nl/?en">moordwandeling.nl</a>.</p></body>
 </html>
